@@ -1,6 +1,7 @@
 /* @flow weak */
 
 import React from "react";
+import Cookies from "js-cookie";
 
 import { PLUGIN_LANDING_PAGE } from "metabase/plugins";
 
@@ -10,7 +11,8 @@ import { routerActions } from "react-router-redux";
 import { UserAuthWrapper } from "redux-auth-wrapper";
 import { t } from "ttag";
 
-import { loadCurrentUser } from "metabase/redux/user";
+import { loadCurrentUser, loginByInjectedToken } from "metabase/redux/user";
+
 import MetabaseSettings from "metabase/lib/settings";
 
 import App from "metabase/App.jsx";
@@ -154,6 +156,23 @@ export const getRoutes = store => (
       <Route path="question/:uuid" component={PublicQuestion} />
       <Route path="dashboard/:uuid" component={PublicDashboard} />
     </Route>
+
+    {/* SESSION INJECTION */}
+    <Route
+      path="/session-login"
+      component={() => <div>Hello!</div>}
+      onEnter={async (nextState, replace) => {
+        const [
+          ,
+          sessionId,
+          path,
+        ] = /session-login\?id=([a-z0-9\-]+)&path=(.+)/gi.exec(
+          window.location.href,
+        );
+
+        await store.dispatch(loginByInjectedToken(sessionId, path));
+      }}
+    />
 
     {/* APP */}
     <Route

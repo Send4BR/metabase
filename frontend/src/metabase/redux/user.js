@@ -6,10 +6,27 @@ import {
   createThunkAction,
 } from "metabase/lib/redux";
 
+import { push } from "react-router-redux";
+import Cookies from "js-cookie";
+
 import { CLOSE_QB_NEWB_MODAL } from "metabase/query_builder/actions";
 import { LOGOUT } from "metabase/auth/auth";
 
 import { UserApi } from "metabase/services";
+
+import { METABASE_SESSION_COOKIE } from "metabase/lib/cookies";
+
+// inject token
+export const LOGIN_BY_INJECTED_TOKEN = "metabase/auth/LOGIN_BY_INJECTED_TOKEN";
+export const loginByInjectedToken = createThunkAction(
+  LOGIN_BY_INJECTED_TOKEN,
+  (token, redirectUrl) => async (dispatch, getState) => {
+    await Cookies.set(METABASE_SESSION_COOKIE, token);
+
+    await UserApi.current();
+    dispatch(push(redirectUrl || "/"));
+  },
+);
 
 export const REFRESH_CURRENT_USER = "metabase/user/REFRESH_CURRENT_USER";
 export const refreshCurrentUser = createAction(REFRESH_CURRENT_USER, () => {
