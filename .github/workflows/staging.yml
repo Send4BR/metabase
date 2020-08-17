@@ -1,0 +1,47 @@
+name: Build and Deploy to GCR
+
+on:
+  push:
+    branches:
+    - staging
+
+# Environment variables available to all jobs and steps in this workflow
+env:
+  PROJECT_ID: ${{ secrets.PROJECT_ID }}
+  IMAGE: metabase-custom-image
+
+jobs:
+  setup-build-publish-deploy:
+    name: Setup, Build, Publish, and Deploy
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    # Setup gcloud CLI
+    - uses: GoogleCloudPlatform/github-actions/setup-gcloud@master
+      with:
+        version: '290.0.1'
+        service_account_email: ${{ secrets.SA_EMAIL }}
+        service_account_key: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
+
+    # Configure docker to use the gcloud command-line tool as a credential helper
+    - run: |-
+        gcloud --quiet auth configure-docker
+    # Build the Docker image
+    - name: Build
+      run: |-
+        docker build \
+          --tag "us.gcr.io/$PROJECT_ID/$IMAGE:$GITHUB_SHA" \
+          --build-arg GITHUB_SHA="$GITHUB_SHA" \
+          --build-arg GITHUB_REF="$GITHUB_REF" .
+    # Push the Docker image to Google Container Registry
+    - name: Publish
+      run: |-
+        docker push "us.gcr.io/$PROJECT_ID/$IMAGE:$GITHUB_SHA"
+    # Tag image as latest as branch is staging
+    - name: Tag Staging
+      run: |-
+        docker tag us.gcr.io/$PROJECT_ID/$IMAGE:$GITHUB_SHA us.gcr.io/$PROJECT_ID/$IMAGE:staging
+        docker push us.gcr.io/$PROJECT_ID/$IMAGE:staging
