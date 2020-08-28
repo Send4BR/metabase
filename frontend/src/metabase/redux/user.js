@@ -21,10 +21,15 @@ export const LOGIN_BY_INJECTED_TOKEN = "metabase/auth/LOGIN_BY_INJECTED_TOKEN";
 export const loginByInjectedToken = createThunkAction(
   LOGIN_BY_INJECTED_TOKEN,
   (token, redirectUrl) => async (dispatch, getState) => {
-    await Cookies.set(METABASE_SESSION_COOKIE, token);
+    Cookies.remove(METABASE_SESSION_COOKIE);
+    Cookies.set(METABASE_SESSION_COOKIE, token);
 
-    await UserApi.current();
-    dispatch(push(redirectUrl || "/"));
+    try {
+      await UserApi.current();
+      dispatch(push(redirectUrl || "/"));
+    } catch (e) {
+      dispatch(push("/"));
+    }
   },
 );
 
