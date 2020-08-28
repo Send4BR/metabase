@@ -160,7 +160,7 @@ export const getRoutes = store => (
     {/* SESSION INJECTION */}
     <Route
       path="/session-login"
-      component={() => <div>Hello!</div>}
+      component={() => <div />}
       onEnter={async (nextState, replace) => {
         const [
           ,
