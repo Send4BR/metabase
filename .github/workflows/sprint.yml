@@ -1,0 +1,49 @@
+name: Build and Deploy to AKS
+
+on:
+  push:
+    branches:
+    - sprint
+
+# Environment variables available to all jobs and steps in this workflow
+env:
+  IMAGE: metabase-custom-image
+
+jobs:
+  setup-build-publish-deploy:
+    name: Setup, Build, Publish, and Deploy
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    # Login to Azure
+    - uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_KEY }}
+
+    # Configure docker to use the azure command-line tool as a credential helper
+    - run: |-
+        az acr login --name aftersale
+    - run: |-
+        az aks get-credentials --resource-group aftersale --name spr-aftersale
+
+    # Build the Docker image
+    - name: Build
+      run: |-
+        docker build \
+          --tag "aftersale.azurecr.io/$IMAGE:$GITHUB_SHA" \
+          --build-arg GITHUB_SHA="$GITHUB_SHA" \
+          --build-arg GITHUB_REF="$GITHUB_REF" .
+
+    # Push the Docker image to Azure Container Registry
+    - name: Publish
+      run: |-
+        docker push "aftersale.azurecr.io/$IMAGE:$GITHUB_SHA"
+
+    # Tag image as latest as branch is sprint
+    - name: Tag sprint
+      run: |-
+        docker tag aftersale.azurecr.io/$IMAGE:$GITHUB_SHA aftersale.azurecr.io/$IMAGE:sprint
+        docker push aftersale.azurecr.io/$IMAGE:sprint
