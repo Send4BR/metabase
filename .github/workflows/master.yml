@@ -47,21 +47,3 @@ jobs:
       run: |-
         docker tag aftersale.azurecr.io/$IMAGE:$GITHUB_SHA aftersale.azurecr.io/$IMAGE:master
         docker push aftersale.azurecr.io/$IMAGE:master
-
-    # Set up kustomize
-    - name: Set up Kustomize
-      run: |-
-        curl -o kustomize --location https://github.com/kubernetes-sigs/kustomize/releases/download/v3.1.0/kustomize_3.1.0_linux_amd64
-        chmod u+x ./kustomize
-        mkdir $GITHUB_WORKSPACE/bin
-        mv kustomize $GITHUB_WORKSPACE/bin/
-        echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
-        
-    # Deploy the Docker image to the AKS cluster
-    - name: Deploy
-      run: |-
-        cd k8s/overlays/production
-        kustomize edit set image aftersale.azurecr.io/IMAGE:TAG=aftersale.azurecr.io/$IMAGE:$GITHUB_SHA
-        kustomize build . | kubectl apply -f -
-        kubectl -n aftersale rollout status deployment/$IMAGE
-        kubectl -n aftersale get services -o wide
