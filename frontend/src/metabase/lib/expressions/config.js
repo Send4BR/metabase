@@ -69,57 +69,29 @@ export function getFunctionArgType(clause, index) {
 
 export const MBQL_CLAUSES = {
   // aggregation functions
-  count: {
-    displayName: `Count`,
-    type: "aggregation",
-    args: [],
-  },
+  count: { displayName: `Count`, type: "aggregation", args: [] },
   "cum-count": {
     displayName: `CumulativeCount`,
     type: "aggregation",
     args: [],
   },
-  sum: {
-    displayName: `Sum`,
-    type: "aggregation",
-    args: ["number"],
-  },
+  sum: { displayName: `Sum`, type: "aggregation", args: ["number"] },
   "cum-sum": {
     displayName: `CumulativeSum`,
     type: "aggregation",
     args: ["number"],
   },
-  distinct: {
-    displayName: `Distinct`,
-    type: "aggregation",
-    args: ["number"],
-  },
+  distinct: { displayName: `Distinct`, type: "aggregation", args: ["number"] },
   stddev: {
     displayName: `StandardDeviation`,
     type: "aggregation",
     args: ["number"],
     requiresFeature: "standard-deviation-aggregations",
   },
-  avg: {
-    displayName: `Average`,
-    type: "aggregation",
-    args: ["number"],
-  },
-  min: {
-    displayName: `Min`,
-    type: "aggregation",
-    args: ["number"],
-  },
-  max: {
-    displayName: `Max`,
-    type: "aggregation",
-    args: ["number"],
-  },
-  share: {
-    displayName: `Share`,
-    type: "aggregation",
-    args: ["boolean"],
-  },
+  avg: { displayName: `Average`, type: "aggregation", args: ["number"] },
+  min: { displayName: `Min`, type: "aggregation", args: ["number"] },
+  max: { displayName: `Max`, type: "aggregation", args: ["number"] },
+  share: { displayName: `Share`, type: "aggregation", args: ["boolean"] },
   "count-where": {
     displayName: `CountIf`,
     type: "aggregation",
@@ -145,20 +117,12 @@ export const MBQL_CLAUSES = {
   percentile: {
     displayName: `Percentile`,
     type: "aggregation",
-    args: ["number"],
+    args: ["number", "number"],
     requiresFeature: "percentile-aggregations",
   },
   // string functions
-  lower: {
-    displayName: `lower`,
-    type: "string",
-    args: ["string"],
-  },
-  upper: {
-    displayName: `upper`,
-    type: "string",
-    args: ["string"],
-  },
+  lower: { displayName: `lower`, type: "string", args: ["string"] },
+  upper: { displayName: `upper`, type: "string", args: ["string"] },
   substring: {
     displayName: `substring`,
     type: "string",
@@ -181,26 +145,10 @@ export const MBQL_CLAUSES = {
     type: "string",
     args: ["string", "string", "string"],
   },
-  length: {
-    displayName: `length`,
-    type: "number",
-    args: ["string"],
-  },
-  trim: {
-    displayName: `trim`,
-    type: "string",
-    args: ["string", "string"],
-  },
-  rtrim: {
-    displayName: `rtrim`,
-    type: "string",
-    args: ["string"],
-  },
-  ltrim: {
-    displayName: `ltrim`,
-    type: "string",
-    args: ["string"],
-  },
+  length: { displayName: `length`, type: "number", args: ["string"] },
+  trim: { displayName: `trim`, type: "string", args: ["string"] },
+  rtrim: { displayName: `rtrim`, type: "string", args: ["string"] },
+  ltrim: { displayName: `ltrim`, type: "string", args: ["string"] },
   // numeric functions
   abs: {
     displayName: `abs`,
@@ -276,6 +224,16 @@ export const MBQL_CLAUSES = {
     type: "boolean",
     args: ["expression", "number", "string"],
   },
+  "is-null": {
+    displayName: `isnull`,
+    type: "boolean",
+    args: ["expression"],
+  },
+  "is-empty": {
+    displayName: `isempty`,
+    type: "boolean",
+    args: ["expression"],
+  },
   // other expression functions
   coalesce: {
     displayName: `coalesce`,
@@ -290,21 +248,9 @@ export const MBQL_CLAUSES = {
     multiple: true,
   },
   // boolean operators
-  and: {
-    displayName: `AND`,
-    type: "boolean",
-    args: ["boolean", "boolean"],
-  },
-  or: {
-    displayName: `OR`,
-    type: "boolean",
-    args: ["boolean", "boolean"],
-  },
-  not: {
-    displayName: `NOT`,
-    type: "boolean",
-    args: ["boolean"],
-  },
+  and: { displayName: `AND`, type: "boolean", args: ["boolean", "boolean"] },
+  or: { displayName: `OR`, type: "boolean", args: ["boolean", "boolean"] },
+  not: { displayName: `NOT`, type: "boolean", args: ["boolean"] },
   // numeric operators
   "*": {
     displayName: "*",
@@ -444,6 +390,8 @@ export const EXPRESSION_FUNCTIONS = new Set([
   "starts-with",
   "between",
   "time-interval",
+  "is-null",
+  "is-empty",
   // other
   "coalesce",
 ]);
@@ -452,7 +400,8 @@ export const EXPRESSION_OPERATORS = new Set(["+", "-", "*", "/"]);
 export const FILTER_OPERATORS = new Set(["!=", "<=", ">=", "<", ">", "="]);
 
 export const BOOLEAN_UNARY_OPERATORS = new Set(["not"]);
-export const BOOLEAN_BINARY_OPERATORS = new Set(["and", "or"]);
+export const LOGICAL_AND_OPERATOR = new Set(["and"]);
+export const LOGICAL_OR_OPERATOR = new Set(["or"]);
 
 export const FUNCTIONS = new Set([
   ...EXPRESSION_FUNCTIONS,
@@ -463,7 +412,8 @@ export const OPERATORS = new Set([
   ...EXPRESSION_OPERATORS,
   ...FILTER_OPERATORS,
   ...BOOLEAN_UNARY_OPERATORS,
-  ...BOOLEAN_BINARY_OPERATORS,
+  ...LOGICAL_AND_OPERATOR,
+  ...LOGICAL_OR_OPERATOR,
 ]);
 
 // "standard" filters, can be edited using UI

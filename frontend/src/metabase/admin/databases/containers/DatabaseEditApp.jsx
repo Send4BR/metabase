@@ -1,5 +1,4 @@
-/* @flow weak */
-
+/* eslint-disable react/prop-types */
 import React, { Component } from "react";
 import PropTypes from "prop-types";
 import { connect } from "react-redux";
@@ -13,14 +12,20 @@ import title from "metabase/hoc/Title";
 
 import DeleteDatabaseModal from "../components/DeleteDatabaseModal";
 import ActionButton from "metabase/components/ActionButton";
+import AddDatabaseHelpCard from "metabase/components/AddDatabaseHelpCard";
 import Button from "metabase/components/Button";
 import Breadcrumbs from "metabase/components/Breadcrumbs";
+import DriverWarning from "metabase/components/DriverWarning";
 import Radio from "metabase/components/Radio";
 import ModalWithTrigger from "metabase/components/ModalWithTrigger";
 
 import Databases from "metabase/entities/databases";
 
-import { getEditingDatabase, getDatabaseCreationStep } from "../selectors";
+import {
+  getEditingDatabase,
+  getDatabaseCreationStep,
+  getInitializeError,
+} from "../selectors";
 
 import {
   reset,
@@ -42,16 +47,18 @@ const DATABASE_FORM_NAME = "database";
 const getLetUserControlScheduling = database =>
   getIn(database, ["details", "let-user-control-scheduling"]);
 
-const mapStateToProps = (state, props) => ({
-  database: getEditingDatabase(state),
-  databaseCreationStep: getDatabaseCreationStep(state),
-  letUserControlSchedulingSaved: getLetUserControlScheduling(
-    getEditingDatabase(state),
-  ),
-  letUserControlSchedulingForm: getLetUserControlScheduling(
-    getValues(state.form[DATABASE_FORM_NAME]),
-  ),
-});
+const mapStateToProps = (state, props) => {
+  const database = getEditingDatabase(state);
+  const formValues = getValues(state.form[DATABASE_FORM_NAME]);
+  return {
+    database,
+    databaseCreationStep: getDatabaseCreationStep(state),
+    selectedEngine: formValues ? formValues.engine : undefined,
+    letUserControlSchedulingSaved: getLetUserControlScheduling(database),
+    letUserControlSchedulingForm: getLetUserControlScheduling(formValues),
+    initializeError: getInitializeError(state),
+  };
+};
 
 const mapDispatchToProps = {
   reset,
@@ -95,6 +102,9 @@ export default class DatabaseEditApp extends Component {
     this.state = {
       currentTab: TABS[0].value,
     };
+
+    this.discardSavedFieldValuesModal = React.createRef();
+    this.deleteDatabaseModal = React.createRef();
   }
 
   static propTypes = {
@@ -113,12 +123,12 @@ export default class DatabaseEditApp extends Component {
     location: PropTypes.object,
   };
 
-  async componentWillMount() {
+  async UNSAFE_componentWillMount() {
     await this.props.reset();
     await this.props.initializeDatabase(this.props.params.databaseId);
   }
 
-  componentWillReceiveProps(nextProps) {
+  UNSAFE_componentWillReceiveProps(nextProps) {
     const isNew = !nextProps.database || !nextProps.database.id;
     if (isNew) {
       // Update the current creation step (= active tab) if adding a new database
@@ -129,11 +139,12 @@ export default class DatabaseEditApp extends Component {
   render() {
     const {
       database,
+      selectedEngine,
       letUserControlSchedulingSaved,
       letUserControlSchedulingForm,
+      initializeError,
     } = this.props;
     const { currentTab } = this.state;
-
     const editingExistingDatabase = database && database.id != null;
     const addingNewDatabase = !editingExistingDatabase;
 
@@ -149,7 +160,7 @@ export default class DatabaseEditApp extends Component {
           ]}
         />
         <Flex pb={2}>
-          <Box w={620}>
+          <Box>
             <div className="pt0">
               {showTabs && (
                 <div className="border-bottom mb2">
@@ -157,41 +168,64 @@ export default class DatabaseEditApp extends Component {
                     value={currentTab}
                     options={TABS}
                     onChange={currentTab => this.setState({ currentTab })}
-                    underlined
+                    variant="underlined"
                   />
                 </div>
               )}
-              <LoadingAndErrorWrapper loading={!database} error={null}>
-                {() => (
-                  <Databases.Form
-                    database={database}
-                    form={Databases.forms[currentTab]}
-                    formName={DATABASE_FORM_NAME}
-                    onSubmit={
-                      addingNewDatabase && currentTab === "connection"
-                        ? this.props.proceedWithDbCreation
-                        : this.props.saveDatabase
-                    }
-                    submitTitle={addingNewDatabase ? t`Save` : t`Save changes`}
-                    renderSubmit={
-                      // override use of ActionButton for the `Next` button
-                      addingNewDatabase &&
-                      currentTab === "connection" &&
-                      letUserControlSchedulingForm &&
-                      (({ handleSubmit, canSubmit }) => (
-                        <Button
-                          primary={canSubmit}
-                          disabled={!canSubmit}
-                          onClick={handleSubmit}
-                        >
-                          {t`Next`}
-                        </Button>
-                      ))
-                    }
-                    submitButtonComponent={Button}
+              <Flex>
+                <Box w={620}>
+                  <LoadingAndErrorWrapper
+                    loading={!database}
+                    error={initializeError}
+                  >
+                    {() => (
+                      <Databases.Form
+                        database={database}
+                        form={Databases.forms[currentTab]}
+                        formName={DATABASE_FORM_NAME}
+                        onSubmit={
+                          addingNewDatabase && currentTab === "connection"
+                            ? this.props.proceedWithDbCreation
+                            : this.props.saveDatabase
+                        }
+                        submitTitle={
+                          addingNewDatabase ? t`Save` : t`Save changes`
+                        }
+                        renderSubmit={
+                          // override use of ActionButton for the `Next` button
+                          addingNewDatabase &&
+                          currentTab === "connection" &&
+                          letUserControlSchedulingForm &&
+                          (({ handleSubmit, canSubmit }) => (
+                            <Button
+                              primary={canSubmit}
+                              disabled={!canSubmit}
+                              onClick={handleSubmit}
+                            >
+                              {t`Next`}
+                            </Button>
+                          ))
+                        }
+                        submitButtonComponent={Button}
+                      />
+                    )}
+                  </LoadingAndErrorWrapper>
+                </Box>
+                <Box>
+                  <DriverWarning
+                    engine={selectedEngine}
+                    ml={26}
+                    data-testid="database-setup-driver-warning"
                   />
-                )}
-              </LoadingAndErrorWrapper>
+                  {addingNewDatabase && (
+                    <AddDatabaseHelpCard
+                      engine={selectedEngine}
+                      ml={26}
+                      data-testid="database-setup-help-card"
+                    />
+                  )}
+                </Box>
+              </Flex>
             </div>
           </Box>
 
@@ -234,14 +268,14 @@ export default class DatabaseEditApp extends Component {
                   <ol>
                     <li>
                       <ModalWithTrigger
-                        ref="discardSavedFieldValuesModal"
+                        ref={this.discardSavedFieldValuesModal}
                         triggerClasses="Button Button--danger Button--discardSavedFieldValues"
                         triggerElement={t`Discard saved field values`}
                       >
                         <ConfirmContent
                           title={t`Discard saved field values`}
                           onClose={() =>
-                            this.refs.discardSavedFieldValuesModal.toggle()
+                            this.discardSavedFieldValuesModal.current.toggle()
                           }
                           onAction={() =>
                             this.props.discardSavedFieldValues(database.id)
@@ -252,13 +286,15 @@ export default class DatabaseEditApp extends Component {
 
                     <li className="mt2">
                       <ModalWithTrigger
-                        ref="deleteDatabaseModal"
+                        ref={this.deleteDatabaseModal}
                         triggerClasses="Button Button--deleteDatabase Button--danger"
                         triggerElement={t`Remove this database`}
                       >
                         <DeleteDatabaseModal
                           database={database}
-                          onClose={() => this.refs.deleteDatabaseModal.toggle()}
+                          onClose={() =>
+                            this.deleteDatabaseModal.current.toggle()
+                          }
                           onDelete={() =>
                             this.props.deleteDatabase(database.id, true)
                           }

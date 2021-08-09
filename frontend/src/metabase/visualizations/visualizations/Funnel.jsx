@@ -1,11 +1,12 @@
-/* @flow */
-
 import React, { Component } from "react";
+import PropTypes from "prop-types";
 import { t } from "ttag";
 import {
   MinRowsError,
   ChartSettingsError,
 } from "metabase/visualizations/lib/errors";
+
+import { iconPropTypes } from "metabase/components/Icon";
 
 import { formatValue } from "metabase/lib/formatting";
 
@@ -24,7 +25,11 @@ import _ from "underscore";
 import cx from "classnames";
 
 import type { VisualizationProps } from "metabase-types/types/Visualization";
-import { TitleLegendHeader } from "metabase/visualizations/components/TitleLegendHeader";
+import TitleLegendHeader from "metabase/visualizations/components/TitleLegendHeader";
+
+const propTypes = {
+  headerIcon: PropTypes.shape(iconPropTypes),
+};
 
 export default class Funnel extends Component {
   props: VisualizationProps;
@@ -174,7 +179,7 @@ export default class Funnel extends Component {
   }
 
   render() {
-    const { settings } = this.props;
+    const { headerIcon, settings } = this.props;
 
     const hasTitle = settings["card.title"];
 
@@ -195,13 +200,13 @@ export default class Funnel extends Component {
               settings={settings}
               onChangeCardAndRun={onChangeCardAndRun}
               actionButtons={actionButtons}
+              icon={headerIcon}
             />
           )}
           {!hasTitle &&
           actionButtons && ( // always show action buttons if we have them
               <LegendHeader
                 className="flex-no-shrink"
-                // $FlowFixMe
                 series={series._raw || series}
                 actionButtons={actionButtons}
                 onChangeCardAndRun={onChangeCardAndRun}
@@ -213,3 +218,5 @@ export default class Funnel extends Component {
     }
   }
 }
+
+Funnel.propTypes = propTypes;

@@ -2,12 +2,12 @@
   "Tests for support for parameterized queries in drivers that support it. (There are other tests for parameter support
   in various places; these are mainly for high-level verification that parameters are working.)"
   (:require [clojure.test :refer :all]
-            [metabase
-             [driver :as driver]
-             [models :refer [Card]]
-             [query-processor :as qp]
-             [test :as mt]
-             [util :as u]]))
+            [medley.core :as m]
+            [metabase.driver :as driver]
+            [metabase.models :refer [Card]]
+            [metabase.query-processor :as qp]
+            [metabase.test :as mt]
+            [metabase.util :as u]))
 
 (defn- run-count-query [query]
   (or (ffirst
@@ -86,6 +86,22 @@
                  :target [:dimension [:template-tag (name field)]]
                  :value  value}]})
 
+;; TODO: fix this test for Presto JDBC (detailed explanation follows)
+;; Spent a few hours and need to move on. Here is the query being generated for the failing case
+;;  SELECT count(*) AS "count" FROM "default"."attempts"
+;;    WHERE date_trunc('day', "default"."attempts"."datetime_tz") = date '2019-11-12';
+;; And here is what it *SHOULD* be to pass the test
+;;  SELECT count(*) AS "count" FROM "default"."attempts"
+;;    WHERE date_trunc('day', "default"."attempts"."datetime_tz" AT TIME ZONE 'UTC') = date '2019-11-12';
+;; Notice the AT TIME ZONE 'UTC' part. In this case, the test does not set a report timezone, so a fallback of UTC
+;; should (evidently) be applied.
+;; We need the type information, that the datetime_tz is `timestamp with time zone`, to be available to
+;; (defmethod sql.qp/date [:presto-jdbc :day]
+;; However, it is not available there. The expression's HSQL type-info and db-type are both nil. Somehow need to tell
+;; the query processor (or something else?) to *include* that type information when running this test, because it's
+;; clearly known (i.e. if you sync the DB and then query the `metabase_field`, it is there and is correct.
+;; Tried manually syncing the DB (with attempted-murders dataset), and storing it to an initialized QP, to no avail.
+
 ;; this isn't a complete test for all possible field filter types, but it covers mostly everything
 (deftest field-filter-param-test
   (letfn [(is-count-= [expected-count table field value-type value]
@@ -149,3 +165,56 @@
             results (qp/process-query query)]
         (is (= [[1]]
                (mt/formatted-rows [int] results)))))))
+
+(deftest native-with-spliced-params-test
+  (testing "Make sure we can convert a parameterized query to a native query with spliced params"
+    (testing "Multiple values"
+      (mt/dataset airports
+        (is (= {:query  "SELECT NAME FROM COUNTRY WHERE \"PUBLIC\".\"COUNTRY\".\"NAME\" IN ('US', 'MX')"
+                :params nil}
+               (qp/query->native-with-spliced-params
+                {:type       :native
+                 :native     {:query         "SELECT NAME FROM COUNTRY WHERE {{country}}"
+                              :template-tags {"country"
+                                              {:name         "country"
+                                               :display-name "Country"
+                                               :type         :dimension
+                                               :dimension    [:field-id (mt/id :country :name)]
+                                               :widget-type  :category}}}
+                 :database   (mt/id)
+                 :parameters [{:type   :location/country
+                               :target [:dimension [:template-tag "country"]]
+                               :value  ["US" "MX"]}]})))))
+
+    (testing "Comma-separated numbers"
+      (is (= {:query  "SELECT * FROM VENUES WHERE \"PUBLIC\".\"VENUES\".\"PRICE\" IN (1, 2)"
+              :params []}
+             (qp/query->native-with-spliced-params
+              {:type       :native
+               :native     {:query         "SELECT * FROM VENUES WHERE {{price}}"
+                            :template-tags {"price"
+                                            {:name         "price"
+                                             :display-name "Price"
+                                             :type         :dimension
+                                             :dimension    [:field-id (mt/id :venues :price)]
+                                             :widget-type  :category}}}
+               :database   (mt/id)
+               :parameters [{:type   :category
+                             :target [:dimension [:template-tag "price"]]
+                             :value  [1 2]}]}))))))
+
+(deftest ignore-parameters-for-unparameterized-native-query-test
+  (testing "Parameters passed for unparameterized queries should get ignored"
+    (let [query {:database (mt/id)
+                 :type     :native
+                 :native   {:query "select 111 as my_number, 'foo' as my_string"}}]
+      (is (= (-> (qp/process-query query)
+                 (m/dissoc-in [:data :results_metadata :checksum]))
+             (-> (qp/process-query (assoc query :parameters [{:type   "category"
+                                                              :value  [:param-value]
+                                                              :target [:dimension
+                                                                       [:field
+                                                                        (mt/id :categories :id)
+                                                                        {:source-field (mt/id :venues :category_id)}]]}]))
+                 (m/dissoc-in [:data :native_form :params])
+                 (m/dissoc-in [:data :results_metadata :checksum])))))))

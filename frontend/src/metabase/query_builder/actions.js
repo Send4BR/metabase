@@ -1,4 +1,3 @@
-/*@flow weak*/
 import { fetchAlertsForQuestion } from "metabase/alert/alert";
 
 declare var ace: any;
@@ -26,19 +25,20 @@ import {
 } from "metabase/lib/card";
 import { open, shouldOpenInBlankWindow } from "metabase/lib/dom";
 import * as Q_DEPRECATED from "metabase/lib/query";
-import { isPK } from "metabase/lib/types";
 import Utils from "metabase/lib/utils";
 import { defer } from "metabase/lib/promise";
 import Question from "metabase-lib/lib/Question";
+import { FieldDimension } from "metabase-lib/lib/Dimension";
 import { cardIsEquivalent, cardQueryIsEquivalent } from "metabase/meta/Card";
+import { normalize } from "cljs/metabase.mbql.js";
 
 import {
   getCard,
   getQuestion,
   getOriginalQuestion,
-  getOriginalCard,
   getIsEditing,
   getTransformedSeries,
+  getRawSeries,
   getResultsMetadata,
   getFirstQueryResult,
   getIsPreviewing,
@@ -62,8 +62,8 @@ import { getSensibleDisplays } from "metabase/visualizations";
 import { getCardAfterVisualizationClick } from "metabase/visualizations/lib/utils";
 import { getPersistableDefaultSettingsForSeries } from "metabase/visualizations/lib/settings/visualization";
 
-import Questions from "metabase/entities/questions";
 import Databases from "metabase/entities/databases";
+import Questions from "metabase/entities/questions";
 import Snippets from "metabase/entities/snippets";
 
 import { getMetadata } from "metabase/selectors/metadata";
@@ -123,6 +123,13 @@ export const onCloseChartSettings = createAction(
   "metabase/qb/CLOSE_CHART_SETTINGS",
 );
 export const onOpenChartType = createAction("metabase/qb/OPEN_CHART_TYPE");
+export const onOpenQuestionDetails = createAction(
+  "metabase/qb/OPEN_QUESTION_DETAILS",
+);
+export const onCloseQuestionDetails = createAction(
+  "metabase/qb/CLOSE_QUESTION_DETAILS",
+);
+
 export const onCloseChartType = createAction("metabase/qb/CLOSE_CHART_TYPE");
 export const onCloseSidebars = createAction("metabase/qb/CLOSE_SIDEBARS");
 
@@ -312,6 +319,7 @@ export const initializeQB = (location, params) => {
 
     const { currentUser } = getState();
 
+    const cardId = Urls.extractEntityId(params.slug);
     let card, originalCard;
     const uiControls: UiControls = {
       isEditing: false,
@@ -334,15 +342,24 @@ export const initializeQB = (location, params) => {
 
     let preserveParameters = false;
     let snippetFetch;
-    if (params.cardId || serializedCard) {
+    if (cardId || serializedCard) {
       // existing card being loaded
       try {
-        // if we have a serialized card then unpack it and use it
-        card = serializedCard ? deserializeCardFromUrl(serializedCard) : {};
+        // if we have a serialized card then unpack and use it
+        if (serializedCard) {
+          card = deserializeCardFromUrl(serializedCard);
+
+          // if serialized query has database we normalize syntax to support older mbql
+          if (card.dataset_query.database != null) {
+            card.dataset_query = normalize(card.dataset_query);
+          }
+        } else {
+          card = {};
+        }
 
         // load the card either from `cardId` parameter or the serialized card
-        if (params.cardId) {
-          card = await loadCard(params.cardId);
+        if (cardId) {
+          card = await loadCard(cardId);
           // when we are loading from a card id we want an explicit clone of the card we loaded which is unmodified
           originalCard = Utils.copy(card);
           // for showing the "started from" lineage correctly when adding filters/breakouts and when going back and forth
@@ -351,12 +368,17 @@ export const initializeQB = (location, params) => {
         } else if (card.original_card_id) {
           // deserialized card contains the card id, so just populate originalCard
           originalCard = await loadCard(card.original_card_id);
-          // if the cards are equal then show the original
-          if (cardIsEquivalent(card, originalCard)) {
+          if (
+            cardIsEquivalent(card, originalCard, { checkParameters: false }) &&
+            !cardIsEquivalent(card, originalCard, { checkParameters: true })
+          ) {
+            // if the cards are equal except for parameters, copy over the id to undirty the card
+            card.id = originalCard.id;
+          } else if (cardIsEquivalent(card, originalCard)) {
+            // if the cards are equal then show the original
             card = Utils.copy(originalCard);
           }
         }
-
         // if this card has any snippet tags we might need to fetch snippets pending permissions
         if (
           Object.values(
@@ -392,7 +414,7 @@ export const initializeQB = (location, params) => {
         uiControls.isEditing = !!options.edit;
 
         // if this is the users first time loading a saved card on the QB then show them the newb modal
-        if (params.cardId && currentUser.is_qbnewb) {
+        if (cardId && currentUser.is_qbnewb) {
           uiControls.isShowingNewbModal = true;
           MetabaseAnalytics.trackEvent("QueryBuilder", "Show Newb Modal");
         }
@@ -472,9 +494,9 @@ export const initializeQB = (location, params) => {
     }
 
     let question = card && new Question(card, getMetadata(getState()));
-    if (params.cardId) {
+    if (question && question.isSaved()) {
       // loading a saved question prevents auto-viz selection
-      question = question && question.lockDisplay();
+      question = question.lockDisplay();
     }
 
     if (question && question.isNative() && snippetFetch) {
@@ -483,6 +505,12 @@ export const initializeQB = (location, params) => {
       question = question.setQuery(
         question.query().updateQueryTextWithNewSnippetNames(snippets),
       );
+    }
+
+    for (const [paramId, value] of Object.entries(
+      (card && card.parameterValues) || {},
+    )) {
+      dispatch(setParameterValue(paramId, value));
     }
 
     card = question && question.card();
@@ -700,19 +728,41 @@ export const setParameterValue = createAction(
   },
 );
 
-// reloadCard
+// refetches the card without triggering a run of the card's query
+export const SOFT_RELOAD_CARD = "metabase/qb/SOFT_RELOAD_CARD";
+export const softReloadCard = createThunkAction(SOFT_RELOAD_CARD, () => {
+  return async (dispatch, getState) => {
+    const outdatedCard = getCard(getState());
+    const action = await dispatch(
+      Questions.actions.fetch({ id: outdatedCard.id }, { reload: true }),
+    );
+
+    return Questions.HACK_getObjectFromAction(action);
+  };
+});
+
 export const RELOAD_CARD = "metabase/qb/RELOAD_CARD";
 export const reloadCard = createThunkAction(RELOAD_CARD, () => {
   return async (dispatch, getState) => {
-    // clone
-    const card = Utils.copy(getOriginalCard(getState()));
+    const outdatedCard = getCard(getState());
+
+    dispatch(resetQB());
+
+    const action = await dispatch(
+      Questions.actions.fetch({ id: outdatedCard.id }, { reload: true }),
+    );
+    const card = Questions.HACK_getObjectFromAction(action);
 
     dispatch(loadMetadataForCard(card));
 
-    // we do this to force the indication of the fact that the card should not be considered dirty when the url is updated
     dispatch(
-      runQuestionQuery({ overrideWithCard: card, shouldUpdateUrl: false }),
+      runQuestionQuery({
+        overrideWithCard: card,
+        shouldUpdateUrl: false,
+      }),
     );
+
+    // if the name of the card changed this will update the url slug
     dispatch(updateUrl(card, { dirty: false }));
 
     return card;
@@ -811,16 +861,58 @@ export const updateQuestion = (
       newQuestion = newQuestion.withoutNameAndId();
     }
 
-    newQuestion = newQuestion.syncColumnsAndSettings(oldQuestion);
+    const queryResult = getFirstQueryResult(getState());
+    newQuestion = newQuestion.syncColumnsAndSettings(oldQuestion, queryResult);
 
     if (run === "auto") {
-      const queryResult = getFirstQueryResult(getState());
       run = hasNewColumns(newQuestion, queryResult);
     }
 
     if (!newQuestion.canAutoRun()) {
       run = false;
     }
+
+    // <PIVOT LOGIC>
+    // We have special logic when going to, coming from, or updating a pivot table.
+    const isPivot = newQuestion.display() === "pivot";
+    const wasPivot = oldQuestion.display() === "pivot";
+    const queryHasBreakouts =
+      isPivot &&
+      newQuestion.isStructured() &&
+      newQuestion.query().breakouts().length > 0;
+
+    // we can only pivot queries with breakouts
+    if (isPivot && queryHasBreakouts) {
+      // compute the pivot setting now so we can query the appropriate data
+      const series = assocIn(
+        getRawSeries(getState()),
+        [0, "card"],
+        newQuestion.card(),
+      );
+      const key = "pivot_table.column_split";
+      const setting = getQuestionWithDefaultVisualizationSettings(
+        newQuestion,
+        series,
+      ).setting(key);
+      newQuestion = newQuestion.updateSettings({ [key]: setting });
+    }
+
+    if (
+      // switching to pivot
+      (isPivot && !wasPivot && queryHasBreakouts) ||
+      // switching away from pivot
+      (!isPivot && wasPivot) ||
+      // updating the pivot rows/cols
+      (isPivot &&
+        queryHasBreakouts &&
+        !_.isEqual(
+          newQuestion.setting("pivot_table.column_split"),
+          oldQuestion.setting("pivot_table.column_split"),
+        ))
+    ) {
+      run = true; // force a run when switching to/from pivot or updating it's setting
+    }
+    // </PIVOT LOGIC>
 
     // Replace the current question with a new one
     await dispatch.action(UPDATE_QUESTION, { card: newQuestion.card() });
@@ -977,7 +1069,7 @@ export const runQuestionQuery = ({
     const originalQuestion: ?Question = getOriginalQuestion(getState());
 
     const cardIsDirty = originalQuestion
-      ? question.isDirtyComparedTo(originalQuestion)
+      ? question.isDirtyComparedToWithoutParameters(originalQuestion)
       : true;
 
     if (shouldUpdateUrl) {
@@ -1044,6 +1136,7 @@ export const queryCompleted = (question, queryResults) => {
       // Otherwise, trust that the question was saved with the correct display.
       question = question
         // if we are going to trigger autoselection logic, check if the locked display no longer is "sensible".
+        .syncColumnsAndSettings(originalQuestion, queryResults[0])
         .maybeUnlockDisplay(getSensibleDisplays(data))
         .setDefaultDisplay()
         .switchTableScalar(data);
@@ -1102,6 +1195,16 @@ export const cancelQuery = () => (dispatch, getState) => {
   }
 };
 
+// We use this for two things:
+// - counting the rows with this as an FK (loadObjectDetailFKReferences)
+// - following those links to a new card that's filtered (followForeignKey)
+function getFilterForFK({ cols, rows }, fk) {
+  const field = new FieldDimension(fk.origin.id);
+  const colIndex = cols.findIndex(c => c.id === fk.destination.id);
+  const objectValue = rows[0][colIndex];
+  return ["=", field.mbql(), objectValue];
+}
+
 export const FOLLOW_FOREIGN_KEY = "metabase/qb/FOLLOW_FOREIGN_KEY";
 export const followForeignKey = createThunkAction(FOLLOW_FOREIGN_KEY, fk => {
   return async (dispatch, getState) => {
@@ -1115,22 +1218,11 @@ export const followForeignKey = createThunkAction(FOLLOW_FOREIGN_KEY, fk => {
       return false;
     }
 
-    // extract the value we will use to filter our new query
-    let originValue;
-    for (let i = 0; i < queryResult.data.cols.length; i++) {
-      if (isPK(queryResult.data.cols[i].special_type)) {
-        originValue = queryResult.data.rows[0][i];
-      }
-    }
-
     // action is on an FK column
     const newCard = startNewCard("query", card.dataset_query.database);
 
     newCard.dataset_query.query["source-table"] = fk.origin.table.id;
-    newCard.dataset_query.query.filter = [
-      "and",
-      ["=", fk.origin.id, originValue],
-    ];
+    newCard.dataset_query.query.filter = getFilterForFK(queryResult.data, fk);
 
     // run it
     dispatch(setCardAndRun(newCard));
@@ -1151,24 +1243,12 @@ export const loadObjectDetailFKReferences = createThunkAction(
       const queryResult = getFirstQueryResult(getState());
       const tableForeignKeys = getTableForeignKeys(getState());
 
-      function getObjectDetailIdValue(data) {
-        for (let i = 0; i < data.cols.length; i++) {
-          const coldef = data.cols[i];
-          if (isPK(coldef.special_type)) {
-            return data.rows[0][i];
-          }
-        }
-      }
-
       async function getFKCount(card, queryResult, fk) {
         const fkQuery = Q_DEPRECATED.createQuery("query");
         fkQuery.database = card.dataset_query.database;
         fkQuery.query["source-table"] = fk.origin.table_id;
         fkQuery.query.aggregation = ["count"];
-        fkQuery.query.filter = [
-          "and",
-          ["=", fk.origin.id, getObjectDetailIdValue(queryResult.data)],
-        ];
+        fkQuery.query.filter = getFilterForFK(queryResult.data, fk);
 
         const info = { status: 0, value: null };
 
@@ -1181,7 +1261,6 @@ export const loadObjectDetailFKReferences = createThunkAction(
           ) {
             info["value"] = result.data.rows[0][0];
           } else {
-            // $FlowFixMe
             info["value"] = "Unknown";
           }
         } catch (error) {
@@ -1206,12 +1285,9 @@ export const loadObjectDetailFKReferences = createThunkAction(
 
       // It's possible that while we were running those queries, the object
       // detail id changed. If so, these fk reference are stale and we shouldn't
-      // put them in state.
+      // put them in state. The detail id is used in the query so we check that.
       const updatedQueryResult = getFirstQueryResult(getState());
-      if (
-        getObjectDetailIdValue(queryResult.data) !==
-        getObjectDetailIdValue(updatedQueryResult.data)
-      ) {
+      if (!_.isEqual(queryResult.json_query, updatedQueryResult.json_query)) {
         return null;
       }
       return fkReferences;
@@ -1222,26 +1298,13 @@ export const loadObjectDetailFKReferences = createThunkAction(
 export const CLEAR_OBJECT_DETAIL_FK_REFERENCES =
   "metabase/qb/CLEAR_OBJECT_DETAIL_FK_REFERENCES";
 
-// DEPRECATED: use metabase/entities/questions
-export const ARCHIVE_QUESTION = "metabase/qb/ARCHIVE_QUESTION";
-export const archiveQuestion = createThunkAction(
-  ARCHIVE_QUESTION,
-  (questionId, archived = true) => async (dispatch, getState) => {
-    const card = getState().qb.card;
-
-    await dispatch(Questions.actions.setArchived({ id: card.id }, archived));
-
-    dispatch(push(Urls.collection(card.collection_id)));
-  },
-);
-
 export const VIEW_NEXT_OBJECT_DETAIL = "metabase/qb/VIEW_NEXT_OBJECT_DETAIL";
 export const viewNextObjectDetail = () => {
   return (dispatch, getState) => {
     const question = getQuestion(getState());
     const filter = question.query().filters()[0];
 
-    const newFilter = ["=", filter[1], filter[2] + 1];
+    const newFilter = ["=", filter[1], parseInt(filter[2]) + 1];
 
     dispatch.action(VIEW_NEXT_OBJECT_DETAIL);
 
@@ -1270,7 +1333,7 @@ export const viewPreviousObjectDetail = () => {
       return false;
     }
 
-    const newFilter = ["=", filter[1], filter[2] - 1];
+    const newFilter = ["=", filter[1], parseInt(filter[2]) - 1];
 
     dispatch.action(VIEW_PREVIOUS_OBJECT_DETAIL);
 
@@ -1293,3 +1356,14 @@ export const showChartSettings = createAction(SHOW_CHART_SETTINGS);
 // these are just temporary mappings to appease the existing QB code and it's naming prefs
 export const onUpdateVisualizationSettings = updateCardVisualizationSettings;
 export const onReplaceAllVisualizationSettings = replaceAllCardVisualizationSettings;
+
+export const REVERT_TO_REVISION = "metabase/qb/REVERT_TO_REVISION";
+export const revertToRevision = createThunkAction(
+  REVERT_TO_REVISION,
+  revision => {
+    return async dispatch => {
+      await revision.revert();
+      await dispatch(reloadCard());
+    };
+  },
+);

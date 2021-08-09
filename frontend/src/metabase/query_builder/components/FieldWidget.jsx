@@ -1,3 +1,4 @@
+/* eslint-disable react/prop-types */
 import React from "react";
 import PropTypes from "prop-types";
 
@@ -8,7 +9,7 @@ import Popover from "metabase/components/Popover";
 import * as FieldRef from "metabase/lib/query/field_ref";
 
 import cx from "classnames";
-import t from "ttag";
+import { t } from "ttag";
 
 export default class FieldWidget extends React.Component {
   constructor(props, context) {
@@ -49,7 +50,7 @@ export default class FieldWidget extends React.Component {
   renderPopover() {
     if (this.state.isOpen) {
       return (
-        <Popover ref="popover" className="FieldPopover" onClose={this.toggle}>
+        <Popover className="FieldPopover" onClose={this.toggle}>
           <FieldList
             className={"text-" + this.props.color}
             field={this.props.field}

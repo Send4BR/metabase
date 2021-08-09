@@ -1,3 +1,4 @@
+/* eslint-disable react/prop-types */
 import React, { Component } from "react";
 import PropTypes from "prop-types";
 import { t } from "ttag";
@@ -16,8 +17,6 @@ import { SettingsApi, GeoJSONApi } from "metabase/services";
 import cx from "classnames";
 
 import LeafletChoropleth from "metabase/visualizations/components/LeafletChoropleth";
-
-import pure from "recompose/pure";
 
 export default class CustomGeoJSONWidget extends Component {
   constructor(props, context) {
@@ -52,12 +51,17 @@ export default class CustomGeoJSONWidget extends Component {
       delete value[id];
     }
 
-    await SettingsApi.put({
-      key: "custom-geojson",
-      value: value,
-    });
+    try {
+      await SettingsApi.put({
+        key: "custom-geojson",
+        value: value,
+      });
 
-    await this.props.reloadSettings();
+      await this.props.reloadSettings();
+    } catch (e) {
+      console.warn("Save failed: ", e);
+      throw e;
+    }
   };
 
   _save = async () => {
@@ -76,7 +80,34 @@ export default class CustomGeoJSONWidget extends Component {
     await this._saveMap(map.id, null);
   };
 
-  // This is a bit of a hack, but the /api/geojson endpoint only works if the map is saved in the custom-geojson setting
+  _validateGeoJson = geoJson => {
+    if (!geoJson) {
+      throw t`Invalid custom GeoJSON`;
+    }
+
+    if (geoJson.type !== "FeatureCollection" && geoJson.type !== "Feature") {
+      throw t`Invalid custom GeoJSON: does not contain features`;
+    }
+
+    if (geoJson.type === "FeatureCollection") {
+      if (!geoJson.features || geoJson.features.length === 0) {
+        throw t`Invalid custom GeoJSON: does not contain features`;
+      }
+
+      for (const feature of geoJson.features) {
+        if (!feature.properties) {
+          throw t`Invalid custom GeoJSON: feature is misssing properties`;
+        }
+      }
+    }
+
+    if (geoJson.type === "Feature") {
+      if (!geoJson.properties) {
+        throw t`Invalid custom GeoJSON: feature is misssing properties`;
+      }
+    }
+  };
+
   _loadGeoJson = async () => {
     try {
       const { map } = this.state;
@@ -85,8 +116,10 @@ export default class CustomGeoJSONWidget extends Component {
         geoJsonLoading: true,
         geoJsonError: null,
       });
-      await this._saveMap(map.id, map);
-      const geoJson = await GeoJSONApi.get({ id: map.id });
+      const geoJson = await GeoJSONApi.load({
+        url: encodeURIComponent(map.url),
+      });
+      this._validateGeoJson(geoJson);
       this.setState({
         geoJson: geoJson,
         geoJsonLoading: false,
@@ -107,11 +140,11 @@ export default class CustomGeoJSONWidget extends Component {
 
     return (
       <div className="flex-full">
-        <div className="flex">
+        <div className="flex justify-between">
           <SettingHeader setting={setting} />
           {!this.state.map && (
             <button
-              className="Button Button--primary flex-align-right"
+              className="Button Button--primary ml1"
               onClick={() =>
                 this.setState({
                   map: {
@@ -213,10 +246,17 @@ const ListMaps = ({ maps, onEditMap, onDeleteMap }) => (
 const GeoJsonPropertySelect = ({ value, onChange, geoJson }) => {
   const options = {};
   if (geoJson) {
-    for (const feature of geoJson.features) {
-      for (const property in feature.properties) {
+    if (geoJson.type === "FeatureCollection") {
+      for (const feature of geoJson.features) {
+        for (const property in feature.properties) {
+          options[property] = options[property] || [];
+          options[property].push(feature.properties[property]);
+        }
+      }
+    } else if (geoJson.type === "Feature") {
+      for (const property in geoJson.properties) {
         options[property] = options[property] || [];
-        options[property].push(feature.properties[property]);
+        options[property].push(geoJson.properties[property]);
       }
     }
   }
@@ -333,7 +373,7 @@ const EditMap = ({
           </SettingContainer>
         </div>
       </div>
-      <div className="flex-full ml4 relative bordered rounded flex my4">
+      <div className="flex-auto ml4 relative bordered rounded flex my4">
         {geoJson || geoJsonLoading || geoJsonError ? (
           <LoadingAndErrorWrapper loading={geoJsonLoading} error={geoJsonError}>
             {() => (
@@ -369,6 +409,8 @@ const EditMap = ({
   </div>
 );
 
-const ChoroplethPreview = pure(({ geoJson }) => (
+const ChoroplethPreview = React.memo(({ geoJson }) => (
   <LeafletChoropleth geoJson={geoJson} />
 ));
+
+ChoroplethPreview.displayName = "ChoroplethPreview";

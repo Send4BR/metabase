@@ -1,5 +1,3 @@
-/* @flow */
-
 import { ngettext, msgid } from "ttag";
 import { inflect } from "metabase/lib/formatting";
 
@@ -52,6 +50,8 @@ export default ({ question, clicked }: ClickActionProps): ClickAction[] => {
     {
       name: "underlying-records",
       section: "records",
+      buttonType: "horizontal",
+      icon: "table_spaced",
       title: ngettext(
         msgid`View this ${inflectedTableName}`,
         `View these ${inflectedTableName}`,
@@ -60,13 +60,10 @@ export default ({ question, clicked }: ClickActionProps): ClickAction[] => {
       question: () => {
         const q = question.drillUnderlyingRecords(dimensions);
         if (extraFilter) {
-          return (
-            q
-              .query()
-              // $FlowFixMe: we know this is a StructuredQuery but flow doesn't
-              .filter(extraFilter)
-              .question()
-          );
+          return q
+            .query()
+            .filter(extraFilter)
+            .question();
         } else {
           return q;
         }

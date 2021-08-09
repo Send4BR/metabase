@@ -1,5 +1,3 @@
-/* @flow weak */
-
 import React from "react";
 import Cookies from "js-cookie";
 
@@ -25,18 +23,16 @@ import ForgotPasswordApp from "metabase/auth/containers/ForgotPasswordApp";
 import LoginApp from "metabase/auth/containers/LoginApp";
 import LogoutApp from "metabase/auth/containers/LogoutApp";
 import PasswordResetApp from "metabase/auth/containers/PasswordResetApp";
-import GoogleNoAccount from "metabase/auth/components/GoogleNoAccount";
 
 /* Dashboards */
 import DashboardApp from "metabase/dashboard/containers/DashboardApp";
 import AutomaticDashboardApp from "metabase/dashboard/containers/AutomaticDashboardApp";
 
-import {
-  BrowseApp,
-  DatabaseBrowser,
-  SchemaBrowser,
-  TableBrowser,
-} from "metabase/components/BrowseApp";
+/* Browse data */
+import BrowseApp from "metabase/browse/components/BrowseApp";
+import DatabaseBrowser from "metabase/browse/containers/DatabaseBrowser";
+import SchemaBrowser from "metabase/browse/containers/SchemaBrowser";
+import TableBrowser from "metabase/browse/containers/TableBrowser";
 
 import QueryBuilder from "metabase/query_builder/containers/QueryBuilder";
 
@@ -82,12 +78,14 @@ import getAdminRoutes from "metabase/admin/routes";
 
 import PublicQuestion from "metabase/public/containers/PublicQuestion";
 import PublicDashboard from "metabase/public/containers/PublicDashboard";
+import ArchiveDashboardModal from "metabase/dashboard/containers/ArchiveDashboardModal";
 import DashboardHistoryModal from "metabase/dashboard/components/DashboardHistoryModal";
 import DashboardMoveModal from "metabase/dashboard/components/DashboardMoveModal";
 import DashboardCopyModal from "metabase/dashboard/components/DashboardCopyModal";
+import DashboardDetailsModal from "metabase/dashboard/components/DashboardDetailsModal";
 import { ModalRoute } from "metabase/hoc/ModalRoute";
 
-import CollectionLanding from "metabase/components/CollectionLanding";
+import CollectionLanding from "metabase/components/CollectionLanding/CollectionLanding";
 import Overworld from "metabase/containers/Overworld";
 
 import ArchiveApp from "metabase/home/containers/ArchiveApp";
@@ -191,7 +189,6 @@ export const getRoutes = store => (
         <Route path="logout" component={LogoutApp} />
         <Route path="forgot_password" component={ForgotPasswordApp} />
         <Route path="reset_password/:token" component={PasswordResetApp} />
-        <Route path="google_no_mb_account" component={GoogleNoAccount} />
       </Route>
 
       {/* MAIN */}
@@ -218,7 +215,7 @@ export const getRoutes = store => (
           <IndexRoute component={UserCollectionList} />
         </Route>
 
-        <Route path="collection/:collectionId" component={CollectionLanding}>
+        <Route path="collection/:slug" component={CollectionLanding}>
           <ModalRoute path="edit" modal={CollectionEdit} />
           <ModalRoute path="archive" modal={ArchiveCollectionModal} />
           <ModalRoute path="new_collection" modal={CollectionCreate} />
@@ -229,13 +226,15 @@ export const getRoutes = store => (
         <Route path="activity" component={HomepageApp} />
 
         <Route
-          path="dashboard/:dashboardId"
+          path="dashboard/:slug"
           title={t`Dashboard`}
           component={DashboardApp}
         >
           <ModalRoute path="history" modal={DashboardHistoryModal} />
           <ModalRoute path="move" modal={DashboardMoveModal} />
           <ModalRoute path="copy" modal={DashboardCopyModal} />
+          <ModalRoute path="details" modal={DashboardDetailsModal} />
+          <ModalRoute path="archive" modal={ArchiveDashboardModal} />
         </Route>
 
         <Route path="/question">
@@ -247,15 +246,15 @@ export const getRoutes = store => (
             component={NewQueryOptions}
           />
           <Route path="notebook" component={QueryBuilder} />
-          <Route path=":cardId" component={QueryBuilder} />
-          <Route path=":cardId/notebook" component={QueryBuilder} />
+          <Route path=":slug" component={QueryBuilder} />
+          <Route path=":slug/notebook" component={QueryBuilder} />
         </Route>
 
         <Route path="/ready" component={PostSetupApp} />
 
         <Route path="browse" component={BrowseApp}>
           <IndexRoute component={DatabaseBrowser} />
-          <Route path=":dbId" component={SchemaBrowser} />
+          <Route path=":slug" component={SchemaBrowser} />
           <Route path=":dbId/schema/:schemaName" component={TableBrowser} />
         </Route>
 
@@ -273,6 +272,10 @@ export const getRoutes = store => (
         <IndexRedirect to="/reference/databases" />
         <Route path="metrics" component={MetricListContainer} />
         <Route path="metrics/:metricId" component={MetricDetailContainer} />
+        <Route
+          path="metrics/:metricId/edit"
+          component={MetricDetailContainer}
+        />
         <Route
           path="metrics/:metricId/questions"
           component={MetricQuestionsContainer}
@@ -347,7 +350,6 @@ export const getRoutes = store => (
     <Route
       path="/_internal"
       getChildRoutes={(partialNextState, callback) =>
-        // $FlowFixMe: flow doesn't know about require.ensure
         require.ensure([], function(require) {
           callback(null, [require("metabase/internal/routes").default]);
         })
@@ -363,15 +365,15 @@ export const getRoutes = store => (
       }
     />
     <Route
-      path="/card/:cardId"
+      path="/card/:slug"
       onEnter={({ location, params }, replace) =>
         replace({
-          pathname: `/question/${params.cardId}`,
+          pathname: `/question/${params.slug}`,
           hash: location.hash,
         })
       }
     />
-    <Redirect from="/dash/:dashboardId" to="/dashboard/:dashboardId" />
+    <Redirect from="/dash/:dashboardId" to="/dashboard/:slug" />
     <Redirect
       from="/collections/permissions"
       to="/admin/permissions/collections"

@@ -1,5 +1,3 @@
-/* @flow */
-
 import { t } from "ttag";
 import LineAreaBarChart from "../components/LineAreaBarChart.jsx";
 import rowRenderer from "../lib/RowRenderer.js";
@@ -8,7 +6,6 @@ import {
   GRAPH_DATA_SETTINGS,
   GRAPH_COLORS_SETTINGS,
 } from "metabase/visualizations/lib/settings/graph";
-import { PLUGIN_CHART_SETTINGS } from "metabase/plugins";
 
 export default class RowChart extends LineAreaBarChart {
   static uiName = t`Row`;
@@ -22,7 +19,6 @@ export default class RowChart extends LineAreaBarChart {
 
   static settings = {
     ...GRAPH_COLORS_SETTINGS,
-    ...PLUGIN_CHART_SETTINGS,
     ...GRAPH_DATA_SETTINGS,
   };
 }

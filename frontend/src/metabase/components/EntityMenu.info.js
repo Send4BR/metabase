@@ -1,8 +1,10 @@
+/* eslint-disable react/prop-types */
 import React from "react";
 
 import EntityMenu from "metabase/components/EntityMenu";
 import { t } from "ttag";
 export const component = EntityMenu;
+export const category = "navigation";
 
 export const description = `
     A menu with various entity related options grouped by context.

@@ -1,3 +1,4 @@
+/* eslint-disable react/prop-types */
 import React from "react";
 
 import { t } from "ttag";
@@ -15,6 +16,8 @@ class ArchiveModal extends React.Component {
     const { onArchive, onClose } = this.props;
     try {
       await onArchive();
+      // Note - if using this component inside of a modal route, make sure onClose is called in that component and not here, otherwise any attmempts to push to a new location won't work properly
+      // Currently the only place we don't use this in a modal route is archiving a question
       if (onClose) {
         onClose();
       }

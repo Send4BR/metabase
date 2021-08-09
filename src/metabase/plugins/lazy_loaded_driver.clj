@@ -7,14 +7,12 @@
   See https://github.com/metabase/metabase/wiki/Metabase-Plugin-Manifest-Reference for all the options allowed for a
   plugin manifest."
   (:require [clojure.tools.logging :as log]
-            [metabase
-             [driver :as driver]
-             [util :as u]]
+            [metabase.driver :as driver]
             [metabase.driver.common :as driver.common]
             [metabase.plugins.init-steps :as init-steps]
-            [metabase.util
-             [i18n :refer [trs]]
-             [ssh :as ssh]])
+            [metabase.util :as u]
+            [metabase.util.i18n :refer [trs]]
+            [metabase.util.ssh :as ssh])
   (:import clojure.lang.MultiFn))
 
 (defn- parse-connection-property [prop]
@@ -65,6 +63,7 @@
   "Register a basic shell of a Metabase driver using the information from its Metabase plugin"
   [{:keys                                                                                            [add-to-classpath!]
     init-steps                                                                                       :init
+    superseded-by                                                                                    :superseded-by
     {driver-name :name, :keys [abstract display-name parent], :or {abstract false}, :as driver-info} :driver}]
   {:pre [(map? driver-info)]}
   (let [driver           (keyword driver-name)
@@ -83,7 +82,8 @@
     (doseq [[^MultiFn multifn, f]
             {driver/initialize!           (make-initialize! driver add-to-classpath! init-steps)
              driver/display-name          (when display-name (constantly display-name))
-             driver/connection-properties (constantly connection-props)}]
+             driver/connection-properties (constantly connection-props)
+             driver/superseded-by         (constantly (keyword superseded-by))}]
       (when f
         (.addMethod multifn driver f)))
     ;; finally, register the Metabase driver

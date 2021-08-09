@@ -1,3 +1,4 @@
+/* eslint-disable react/prop-types */
 import React from "react";
 import PropTypes from "prop-types";
 import { Box } from "grid-styled";
@@ -16,7 +17,7 @@ import * as Urls from "metabase/lib/urls";
 import _ from "underscore";
 import cx from "classnames";
 
-const EXPORT_FORMATS = ["csv", "xlsx", "json"];
+const EXPORT_FORMATS = Urls.exportFormats;
 
 const QueryDownloadWidget = ({
   className,
@@ -28,6 +29,7 @@ const QueryDownloadWidget = ({
   dashcardId,
   icon,
   params,
+  visualizationSettings,
 }) => (
   <PopoverWithTrigger
     triggerElement={
@@ -83,8 +85,8 @@ const QueryDownloadWidget = ({
               <UnsavedQueryButton
                 key={type}
                 type={type}
-                card={card}
                 result={result}
+                visualizationSettings={visualizationSettings}
               />
             ) : null}
           </Box>
@@ -94,17 +96,24 @@ const QueryDownloadWidget = ({
   </PopoverWithTrigger>
 );
 
-const UnsavedQueryButton = ({ type, result: { json_query }, card }) => (
+const UnsavedQueryButton = ({
+  type,
+  result: { json_query = {} },
+  visualizationSettings,
+}) => (
   <DownloadButton
     url={`api/dataset/${type}`}
-    params={{ query: JSON.stringify(_.omit(json_query, "constraints")) }}
+    params={{
+      query: JSON.stringify(_.omit(json_query, "constraints")),
+      visualization_settings: JSON.stringify(visualizationSettings),
+    }}
     extensions={[type]}
   >
     {type}
   </DownloadButton>
 );
 
-const SavedQueryButton = ({ type, result: { json_query }, card }) => (
+const SavedQueryButton = ({ type, result: { json_query = {} }, card }) => (
   <DownloadButton
     url={`api/card/${card.id}/query/${type}`}
     params={{ parameters: JSON.stringify(json_query.parameters) }}
@@ -114,7 +123,7 @@ const SavedQueryButton = ({ type, result: { json_query }, card }) => (
   </DownloadButton>
 );
 
-const PublicQueryButton = ({ type, uuid, result: { json_query } }) => (
+const PublicQueryButton = ({ type, uuid, result: { json_query = {} } }) => (
   <DownloadButton
     method="GET"
     url={Urls.publicQuestion(uuid, type)}

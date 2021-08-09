@@ -1,14 +1,13 @@
 (ns metabase.timeseries-query-processor-test.util
   "Utility functions and macros for testing timeseries database drivers, such as Druid."
   (:require [metabase.test :as mt]
-            [metabase.test.data
-             [dataset-definitions :as defs]
-             [interface :as tx]]))
+            [metabase.test.data.dataset-definitions :as defs]
+            [metabase.test.data.interface :as tx]))
 
 (defn timeseries-drivers []
   #{:druid})
 
-(def ^:private flattened-db-def
+(def flattened-db-def
   "The normal test-data DB definition as a flattened, single-table DB definition."
   (tx/flattened-dataset-definition defs/test-data "checkins"))
 

@@ -1,3 +1,4 @@
+/* eslint-disable react/prop-types */
 import React, { Component } from "react";
 import PropTypes from "prop-types";
 import { t } from "ttag";
@@ -60,7 +61,7 @@ export default class AddSeriesModal extends Component {
   };
   static defaultProps = {};
 
-  async componentWillMount() {
+  async UNSAFE_componentWillMount() {
     const { questions, loadMetadataForQueries } = this.props;
     try {
       await loadMetadataForQueries(questions.map(question => question.query()));
@@ -290,7 +291,7 @@ export default class AddSeriesModal extends Component {
           </div>
         </div>
         <div
-          className="border-left flex flex-column"
+          className="border-left flex flex-column scroll-y"
           style={{
             width: 370,
             backgroundColor: color("bg-light"),
@@ -318,7 +319,7 @@ export default class AddSeriesModal extends Component {
             noBackground
           >
             {() => (
-              <ul className="flex-full scroll-y scroll-show pr1">
+              <ul className="pr1">
                 {filteredQuestions.map(question => (
                   <li
                     key={question.id()}
@@ -328,6 +329,7 @@ export default class AddSeriesModal extends Component {
                   >
                     <span className="px1 flex-no-shrink">
                       <CheckBox
+                        label={question.displayName()}
                         checked={enabledQuestions[question.id()]}
                         onChange={e =>
                           this.handleQuestionSelectedChange(
@@ -337,7 +339,6 @@ export default class AddSeriesModal extends Component {
                         }
                       />
                     </span>
-                    <span className="px1">{question.displayName()}</span>
                     {!question.isStructured() && (
                       <Tooltip
                         tooltip={t`We're not sure if this question is compatible`}

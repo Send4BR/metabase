@@ -1,24 +1,19 @@
-/* @flow */
-
+/* eslint-disable react/prop-types */
 import React, { Component } from "react";
 import PropTypes from "prop-types";
 import { t } from "ttag";
 import ActionButton from "metabase/components/ActionButton";
-import AddToDashSelectQuestionModal from "./AddToDashSelectQuestionModal";
-import ArchiveDashboardModal from "./ArchiveDashboardModal";
+import Button from "metabase/components/Button";
 import Header from "metabase/components/Header";
 import Icon from "metabase/components/Icon";
-import ModalWithTrigger from "metabase/components/ModalWithTrigger";
 import Tooltip from "metabase/components/Tooltip";
-import DashboardEmbedWidget from "../containers/DashboardEmbedWidget";
 
 import { getDashboardActions } from "./DashboardActions";
+import { DashboardHeaderButton } from "./DashboardHeader.styled";
 
 import ParametersPopover from "./ParametersPopover";
 import Popover from "metabase/components/Popover";
-
-import * as Urls from "metabase/lib/urls";
-import MetabaseSettings from "metabase/lib/settings";
+import PopoverWithTrigger from "metabase/components/PopoverWithTrigger";
 
 import cx from "classnames";
 
@@ -40,27 +35,30 @@ type Props = {
   location: LocationDescriptor,
 
   dashboard: DashboardWithCards,
+  dashboardBeforeEditing: ?DashboardWithCards,
 
   isAdmin: boolean,
   isEditable: boolean,
-  isEditing: false | DashboardWithCards,
+  isEditing: boolean,
   isFullscreen: boolean,
   isNightMode: boolean,
 
   refreshPeriod: ?number,
   setRefreshElapsedHook: Function,
 
-  parametersWidget: React$Element<*>,
+  parametersWidget: React.Element,
 
   addCardToDashboard: ({ dashId: DashCardId, cardId: CardId }) => void,
   addTextDashCardToDashboard: ({ dashId: DashCardId }) => void,
-  archiveDashboard: (dashboardId: DashboardId) => void,
   fetchDashboard: (dashboardId: DashboardId, queryParams: ?QueryParams) => void,
   saveDashboardAndCards: () => Promise<void>,
   setDashboardAttribute: (attribute: string, value: any) => void,
 
   addParameter: (option: ParameterOption) => Promise<Parameter>,
   setEditingParameter: (parameterId: ?ParameterId) => void,
+  isAddParameterPopoverOpen: boolean,
+  showAddParameterPopover: () => void,
+  hideAddParameterPopover: () => void,
 
   onEditingChange: (isEditing: false | DashboardWithCards) => void,
   onRefreshPeriodChange: (?number) => void,
@@ -68,6 +66,9 @@ type Props = {
   onFullscreenChange: boolean => void,
 
   onChangeLocation: string => void,
+
+  onSharingClick: void => void,
+  onEmbeddingClick: void => void,
 };
 
 type State = {
@@ -75,7 +76,12 @@ type State = {
 };
 
 export default class DashboardHeader extends Component {
-  props: Props;
+  constructor(props: Props) {
+    super(props);
+
+    this.addQuestionModal = React.createRef();
+  }
+
   state: State = {
     modal: null,
   };
@@ -93,7 +99,6 @@ export default class DashboardHeader extends Component {
 
     addCardToDashboard: PropTypes.func.isRequired,
     addTextDashCardToDashboard: PropTypes.func.isRequired,
-    archiveDashboard: PropTypes.func.isRequired,
     fetchDashboard: PropTypes.func.isRequired,
     saveDashboardAndCards: PropTypes.func.isRequired,
     setDashboardAttribute: PropTypes.func.isRequired,
@@ -102,6 +107,9 @@ export default class DashboardHeader extends Component {
     onRefreshPeriodChange: PropTypes.func.isRequired,
     onNightModeChange: PropTypes.func.isRequired,
     onFullscreenChange: PropTypes.func.isRequired,
+
+    onSharingClick: PropTypes.func.isRequired,
+    onEmbeddingClick: PropTypes.func.isRequred,
   };
 
   handleEdit(dashboard: DashboardWithCards) {
@@ -133,13 +141,6 @@ export default class DashboardHeader extends Component {
     this.onDoneEditing();
   }
 
-  async onArchive() {
-    const { dashboard } = this.props;
-    // TODO - this should use entity action
-    await this.props.archiveDashboard(dashboard.id);
-    this.props.onChangeLocation(Urls.collection(dashboard.collection_id));
-  }
-
   getEditWarning(dashboard: DashboardWithCards) {
     if (dashboard.embedding_params) {
       const currentSlugs = Object.keys(dashboard.embedding_params);
@@ -147,40 +148,30 @@ export default class DashboardHeader extends Component {
       // embedding params keys?
       if (
         this.props.isEditing &&
-        !Object.keys(this.props.isEditing.embedding_params).every(slug =>
-          currentSlugs.includes(slug),
+        this.props.dashboardBeforeEditing &&
+        Object.keys(this.props.dashboardBeforeEditing.embedding_params).some(
+          slug => !currentSlugs.includes(slug),
         )
       ) {
-        return "You've updated embedded params and will need to update your embed code.";
+        return t`You've updated embedded params and will need to update your embed code.`;
       }
     }
   }
 
   getEditingButtons() {
     return [
-      <a
+      <Button
         data-metabase-event="Dashboard;Cancel Edits"
         key="cancel"
-        className="Button Button--small"
+        className="Button Button--small mr1"
         onClick={() => this.onCancel()}
       >
         {t`Cancel`}
-      </a>,
-      <ModalWithTrigger
-        key="archive"
-        ref="archiveDashboardModal"
-        triggerClasses="Button Button--small"
-        triggerElement={t`Archive`}
-      >
-        <ArchiveDashboardModal
-          onArchive={() => this.onArchive(this.props.dashboard)}
-          onClose={() => this.refs.archiveDashboardModal.toggle()}
-        />
-      </ModalWithTrigger>,
+      </Button>,
       <ActionButton
         key="save"
         actionFn={() => this.onSave()}
-        className="Button Button--small Button--primary"
+        className="Button Button--primary Button--small"
         normalText={t`Save`}
         activeText={t`Saving…`}
         failedText={t`Save failed`}
@@ -196,75 +187,34 @@ export default class DashboardHeader extends Component {
       isEditing,
       isFullscreen,
       isEditable,
-      isAdmin,
       location,
+      onToggleAddQuestionSidebar,
+      showAddQuestionSidebar,
     } = this.props;
-    const isEmpty = !dashboard || dashboard.ordered_cards.length === 0;
     const canEdit = dashboard.can_write && isEditable && !!dashboard;
 
-    const isPublicLinksEnabled = MetabaseSettings.get("enable-public-sharing");
-    const isEmbeddingEnabled = MetabaseSettings.get("enable-embedding");
-
     const buttons = [];
+    const extraButtons = [];
 
     if (isFullscreen && parametersWidget) {
       buttons.push(parametersWidget);
     }
 
-    if (!isFullscreen && canEdit) {
-      buttons.push(
-        <ModalWithTrigger
-          key="add-a-question"
-          ref="addQuestionModal"
-          triggerElement={
-            <Tooltip tooltip={t`Add a question`}>
-              <span data-metabase-event="Dashboard;Add Card Modal">
-                <Icon
-                  className={cx("text-brand-hover cursor-pointer", {
-                    "Icon--pulse": isEmpty,
-                  })}
-                  name="add"
-                  size={16}
-                />
-              </span>
-            </Tooltip>
-          }
-        >
-          <AddToDashSelectQuestionModal
-            dashboard={dashboard}
-            addCardToDashboard={this.props.addCardToDashboard}
-            onEditingChange={this.props.onEditingChange}
-            onClose={() => this.refs.addQuestionModal.toggle()}
-          />
-        </ModalWithTrigger>,
-      );
-    }
-
     if (isEditing) {
-      // Parameters
-      buttons.push(
-        <span key="add-a-filter">
-          <Tooltip tooltip={t`Add a filter`}>
-            <a
-              key="parameters"
-              className={cx("text-brand-hover", {
-                "text-brand": this.state.modal === "parameters",
-              })}
-              onClick={() => this.setState({ modal: "parameters" })}
-            >
-              <Icon name="funnel_add" size={16} />
-            </a>
-          </Tooltip>
+      const addQuestionButtonHint = showAddQuestionSidebar
+        ? t`Close sidebar`
+        : t`Add questions`;
 
-          {this.state.modal && this.state.modal === "parameters" && (
-            <Popover onClose={() => this.setState({ modal: null })}>
-              <ParametersPopover
-                onAddParameter={this.props.addParameter}
-                onClose={() => this.setState({ modal: null })}
-              />
-            </Popover>
-          )}
-        </span>,
+      buttons.push(
+        <Tooltip tooltip={addQuestionButtonHint}>
+          <DashboardHeaderButton
+            isActive={showAddQuestionSidebar}
+            onClick={onToggleAddQuestionSidebar}
+            data-metabase-event="Dashboard;Add Card Sidebar"
+          >
+            <Icon name="add" />
+          </DashboardHeaderButton>
+        </Tooltip>,
       );
 
       // Add text card button
@@ -276,18 +226,54 @@ export default class DashboardHeader extends Component {
             className="text-brand-hover cursor-pointer"
             onClick={() => this.onAddTextBox()}
           >
-            <Icon name="string" size={20} />
+            <DashboardHeaderButton>
+              <Icon name="string" size={18} />
+            </DashboardHeaderButton>
           </a>
         </Tooltip>,
       );
 
+      const {
+        isAddParameterPopoverOpen,
+        showAddParameterPopover,
+        hideAddParameterPopover,
+        addParameter,
+      } = this.props;
+      // Parameters
       buttons.push(
+        <span key="add-a-filter">
+          <Tooltip tooltip={t`Add a filter`}>
+            <a
+              key="parameters"
+              className={cx("text-brand-hover", {
+                "text-brand": isAddParameterPopoverOpen,
+              })}
+              onClick={showAddParameterPopover}
+            >
+              <DashboardHeaderButton>
+                <Icon name="filter" />
+              </DashboardHeaderButton>
+            </a>
+          </Tooltip>
+
+          {isAddParameterPopoverOpen && (
+            <Popover onClose={hideAddParameterPopover}>
+              <ParametersPopover
+                onAddParameter={addParameter}
+                onClose={hideAddParameterPopover}
+              />
+            </Popover>
+          )}
+        </span>,
+      );
+
+      extraButtons.push(
         <Tooltip key="revision-history" tooltip={t`Revision history`}>
           <Link
             to={location.pathname + "/history"}
             data-metabase-event={"Dashboard;Revisions"}
           >
-            <Icon className="text-brand-hover" name="history" size={18} />
+            {t`Revision history`}
           </Link>
         </Tooltip>,
       );
@@ -302,48 +288,89 @@ export default class DashboardHeader extends Component {
             className="text-brand-hover cursor-pointer"
             onClick={() => this.handleEdit(dashboard)}
           >
-            <Icon name="pencil" size={16} />
+            <DashboardHeaderButton>
+              <Icon name="pencil" />
+            </DashboardHeaderButton>
           </a>
         </Tooltip>,
       );
     }
 
     if (!isFullscreen && !isEditing) {
+      const extraButtonClassNames =
+        "bg-brand-hover text-white-hover py2 px3 text-bold block cursor-pointer";
       if (canEdit) {
-        buttons.push(
-          <Tooltip key="new-dashboard" tooltip={t`Move dashboard`}>
-            <Link
-              to={location.pathname + "/move"}
-              data-metabase-event={"Dashboard;Move"}
-            >
-              <Icon className="text-brand-hover" name="move" size={18} />
-            </Link>
-          </Tooltip>,
+        extraButtons.push(
+          <Link
+            className={extraButtonClassNames}
+            to={location.pathname + "/details"}
+            data-metabase-event={"Dashboard;EditDetails"}
+          >
+            {t`Change title and description`}
+          </Link>,
         );
       }
-      buttons.push(
-        <Tooltip key="copy-dashboard" tooltip={t`Duplicate dashboard`}>
+      extraButtons.push(
+        <Link
+          className={extraButtonClassNames}
+          to={location.pathname + "/history"}
+          data-metabase-event={"Dashboard;EditDetails"}
+        >
+          {t`Revision history`}
+        </Link>,
+      );
+      extraButtons.push(
+        <Link
+          className={extraButtonClassNames}
+          to={location.pathname + "/copy"}
+          data-metabase-event={"Dashboard;Copy"}
+        >
+          {t`Duplicate`}
+        </Link>,
+      );
+      if (canEdit) {
+        extraButtons.push(
           <Link
-            to={location.pathname + "/copy"}
-            data-metabase-event={"Dashboard;Copy"}
+            className={extraButtonClassNames}
+            to={location.pathname + "/move"}
+            data-metabase-event={"Dashboard;Move"}
           >
-            <Icon className="text-brand-hover" name="clone" size={18} />
-          </Link>
-        </Tooltip>,
-      );
+            {t`Move`}
+          </Link>,
+        );
+      }
+      if (canEdit) {
+        extraButtons.push(
+          <Link
+            className={extraButtonClassNames}
+            to={location.pathname + "/archive"}
+            data-metabase-event={"Dashboard;Archive"}
+          >
+            {t`Archive`}
+          </Link>,
+        );
+      }
     }
 
-    if (
-      !isFullscreen &&
-      ((isPublicLinksEnabled && (isAdmin || dashboard.public_uuid)) ||
-        (isEmbeddingEnabled && isAdmin))
-    ) {
+    buttons.push(...getDashboardActions(this, this.props));
+
+    if (extraButtons.length > 0 && !isEditing) {
       buttons.push(
-        <DashboardEmbedWidget key="dashboard-embed" dashboard={dashboard} />,
+        <PopoverWithTrigger
+          triggerElement={
+            <DashboardHeaderButton>
+              <Icon name="ellipsis" size={20} className="text-brand-hover" />
+            </DashboardHeaderButton>
+          }
+        >
+          <div className="py1">
+            {extraButtons.map((b, i) => (
+              <div key={i}>{b}</div>
+            ))}
+          </div>
+        </PopoverWithTrigger>,
       );
     }
-
-    buttons.push(...getDashboardActions(this.props));
 
     return [buttons];
   }
@@ -358,19 +385,13 @@ export default class DashboardHeader extends Component {
         analyticsContext="Dashboard"
         item={dashboard}
         isEditing={this.props.isEditing}
-        showBadge={!this.props.isEditing && !this.props.isFullscreen}
+        hasBadge={!this.props.isEditing && !this.props.isFullscreen}
         isEditingInfo={this.props.isEditing}
         headerButtons={this.getHeaderButtons()}
         editWarning={this.getEditWarning(dashboard)}
-        editingTitle={t`You are editing a dashboard`}
+        editingTitle={t`You're editing this dashboard.`}
         editingButtons={this.getEditingButtons()}
         setItemAttributeFn={this.props.setDashboardAttribute}
-        headerModalMessage={
-          this.props.isEditingParameter
-            ? t`Select the field that should be filtered for each card`
-            : null
-        }
-        onHeaderModalDone={() => this.props.setEditingParameter(null)}
       />
     );
   }

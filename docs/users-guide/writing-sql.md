@@ -34,6 +34,11 @@ Writing SQL queries that use variables or parameters can be very powerful, but i
 
 You can use [SQL snippets](sql-snippets.md) to save, reuse, and share SQL code across multiple questions that are composed using the SQL editor.
 
+
+### Learn more
+
+- [Best practices for writing SQL queries](https://www.metabase.com/learn/sql-questions/sql-best-practices.html) 
+
 ---
 
 ## Next: Creating charts

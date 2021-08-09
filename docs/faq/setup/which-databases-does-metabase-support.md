@@ -1,19 +1,6 @@
 # Which databases does Metabase support?
 
-The following databases are officially supported by Metabase:
+Please see [our list of officially supported databases][supported-databases]. There are also [community-built database drivers][community-drivers] for databases that we do not currently support, and you are always welcome to build your own.
 
-- BigQuery
-- Druid
-- Google Analytics
-- H2
-- MongoDB
-- MySQL/MariaDB
-- PostgreSQL
-- Presto
-- Amazon Redshift
-- Snowflake
-- Spark SQL
-- SQLite
-- SQL Server
-
-You may find some [community-built database drivers](../../developers-guide-drivers.md) for databases that we do not currently support - and you are always welcome to build your own!
+[community-drivers]: ../../developers-guide-drivers.html
+[supported-databases]: ../../administration-guide/01-managing-databases.html#officially-supported-databases

@@ -1,6 +1,4 @@
-/* @flow weak */
-
-import { handleActions, createAction } from "metabase/lib/redux";
+import { handleActions, createAction } from "redux-actions";
 import { updateIn, assoc } from "icepick";
 
 export const setRequestLoading = createAction(

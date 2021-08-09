@@ -2,18 +2,28 @@
 
 import _ from "underscore";
 import { getIn } from "icepick";
-import { t } from "ttag";
 
 import { datasetContainsNoResults } from "metabase/lib/dataset";
 import { parseTimestamp } from "metabase/lib/time";
-
-import { dimensionIsNumeric } from "./numeric";
 import {
+  NULL_DISPLAY_VALUE,
+  NULL_NUMERIC_VALUE,
+  TOTAL_ORDINAL_VALUE,
+} from "metabase/lib/constants";
+
+import {
+  computeTimeseriesDataInverval,
   dimensionIsTimeseries,
   dimensionIsExplicitTimeseries,
+  getTimezone,
+  minTimeseriesUnit,
 } from "./timeseries";
+import { computeNumericDataInverval, dimensionIsNumeric } from "./numeric";
+
 import { getAvailableCanvasWidth, getAvailableCanvasHeight } from "./utils";
 import { invalidDateWarning, nullDimensionWarning } from "./warnings";
+
+import type { Value } from "metabase-types/types/Dataset";
 
 export function initChart(chart, element) {
   // set the bounds
@@ -47,7 +57,6 @@ export function forceSortedGroup(
   group: CrossfilterGroup,
   indexMap: Map<Value, number>,
 ): void {
-  // $FlowFixMe
   const sorted = group
     .top(Infinity)
     .sort((a, b) => indexMap.get(a.key) - indexMap.get(b.key));
@@ -135,19 +144,34 @@ function getParseOptions({ settings, data }) {
   };
 }
 
+function canDisplayNull(settings) {
+  // histograms are converted to ordinal scales, so we need this ugly logic as a workaround
+  return !isOrdinal(settings) || isHistogram(settings);
+}
+
 export function getDatas({ settings, series }, warn) {
-  const isNotOrdinal = !isOrdinal(settings);
   return series.map(({ data }) => {
+    const parseOptions = getParseOptions({ settings, data });
+
+    let rows = data.rows;
+
     // non-ordinal dimensions can't display null values,
     // so we filter them out and display a warning
-    const rows = isNotOrdinal
-      ? data.rows.filter(([x]) => x !== null)
-      : data.rows;
+    if (canDisplayNull(settings)) {
+      rows = data.rows.filter(([x]) => x !== null);
+    } else if (parseOptions.isNumeric) {
+      rows = data.rows.map(row => {
+        const [x, ...rest] = row;
+        const newRow = [replaceNullValuesForOrdinal(x), ...rest];
+        newRow._origin = row._origin;
+        return newRow;
+      });
+    }
+
     if (rows.length < data.rows.length) {
       warn(nullDimensionWarning());
     }
 
-    const parseOptions = getParseOptions({ settings, data });
     return rows.map(row => {
       const [x, ...rest] = row;
       const newRow = [parseXValue(x, parseOptions, warn), ...rest];
@@ -160,7 +184,6 @@ export function getDatas({ settings, series }, warn) {
 export function getXValues({ settings, series }) {
   // if _raw isn't set then we already have the raw series
   const { _raw: rawSeries = series } = series;
-  const isNotOrdinal = !isOrdinal(settings);
   const warn = () => {}; // no op since warning in handled by getDatas
   const uniqueValues = new Set();
   let isAscending = true;
@@ -174,7 +197,7 @@ export function getXValues({ settings, series }) {
     let lastValue;
     for (const row of data.rows) {
       // non ordinal dimensions can't display null values, so we exclude them from xValues
-      if (isNotOrdinal && row[columnIndex] === null) {
+      if (canDisplayNull(settings) && row[columnIndex] === null) {
         continue;
       }
       const value = parseXValue(row[columnIndex], parseOptions, warn);
@@ -223,6 +246,116 @@ function parseTimestampAndWarn(value, unit) {
   return { parsedValue: m };
 }
 
+/*
+
+A waterfall chart is essentially a stacked bar chart.
+It consists of the following (from the topmost):
+- the "total bar" which has a value only for the last one
+- the "green bar" for the positives/increases
+- the "red bar" for the negatives/decreases
+- the "invisible beam" supporting either the green or red bar
+
+Note the green and red bars are mutually exclusive (i.e. if one has
+a positive value, the other is zero). This is done so we need not have
+conditional fill color.
+
+*/
+
+export function syntheticStackedBarsForWaterfallChart(
+  datas,
+  settings = {},
+  series = [],
+) {
+  const showTotal = settings && settings["waterfall.show_total"];
+  const stackedBarsDatas = datas.slice();
+  const mainSeries = stackedBarsDatas[0];
+  const mainValues = mainSeries.map(d => d[1]);
+  const totalValue = mainValues.reduce((total, value) => total + value, 0);
+
+  const { beams } = mainValues.reduce(
+    (t, value) => {
+      return {
+        beams: [...t.beams, t.offset],
+        offset: t.offset + value,
+      };
+    },
+    { beams: [], offset: 0 },
+  );
+
+  const values = mainValues.slice();
+  if (showTotal) {
+    const total = [xValueForWaterfallTotal({ settings, series }), totalValue];
+    if (mainSeries[0]._origin) {
+      // cloning for the total bar
+      total._origin = {
+        seriesIndex: mainSeries[0]._origin.seriesIndex,
+        rowIndex: mainSeries.length,
+        cols: mainSeries[0]._origin.cols,
+        row: total,
+      };
+    }
+    stackedBarsDatas[0] = [...mainSeries, total];
+    // The last one is the total bar, anchor it at 0
+    beams.push(0);
+    values.push(0);
+  } else {
+    stackedBarsDatas[0] = mainSeries;
+  }
+  stackedBarsDatas.push(stackedBarsDatas[0].map(k => k.slice())); // negatives
+  stackedBarsDatas.push(stackedBarsDatas[0].map(k => k.slice())); // positives
+  stackedBarsDatas.push(stackedBarsDatas[0].map(k => k.slice())); // total
+  for (let k = 0; k < values.length; ++k) {
+    stackedBarsDatas[0][k]._waterfallValue = stackedBarsDatas[0][k][1];
+    stackedBarsDatas[0][k][1] = beams[k];
+    stackedBarsDatas[1][k][1] = values[k] < 0 ? values[k] : 0;
+    stackedBarsDatas[2][k][1] = values[k] > 0 ? values[k] : 0;
+    stackedBarsDatas[3][k][1] =
+      !showTotal || k < values.length - 1 ? 0 : totalValue;
+  }
+
+  return stackedBarsDatas;
+}
+
+export function getXInterval({ settings, series }, xValues, warn) {
+  if (isTimeseries(settings)) {
+    // We need three pieces of information to define a timeseries range:
+    // 1. interval - it's really the "unit": month, day, etc
+    // 2. count - how many intervals per tick?
+    // 3. timezone - what timezone are values in? days vary in length by timezone
+    const unit = minTimeseriesUnit(series.map(s => s.data.cols[0].unit));
+    const timezone = getTimezone(series, warn);
+    const { count, interval } = computeTimeseriesDataInverval(xValues, unit);
+    return { count, interval, timezone };
+  } else if (isQuantitative(settings) || isHistogram(settings)) {
+    // Get the bin width from binning_info, if available
+    // TODO: multiseries?
+    const binningInfo = getFirstNonEmptySeries(series).data.cols[0]
+      .binning_info;
+    if (binningInfo) {
+      return binningInfo.bin_width;
+    }
+
+    // Otherwise try to infer from the X values
+    return computeNumericDataInverval(xValues);
+  }
+}
+
+export function xValueForWaterfallTotal({ settings, series }) {
+  const xValues = getXValues({ settings, series });
+  const xInterval = getXInterval({ settings, series }, xValues, () => {});
+
+  if (isTimeseries(settings)) {
+    const { count, interval } = xInterval;
+    const lastXValue = xValues[xValues.length - 1];
+    return lastXValue.clone().add(count, interval);
+  } else if (isQuantitative(settings) || isHistogram(settings)) {
+    const maxXValue = _.max(xValues);
+    return maxXValue + xInterval;
+  }
+
+  return TOTAL_ORDINAL_VALUE;
+}
+
 /************************************************************ PROPERTIES ************************************************************/
 
 export const isTimeseries = settings =>
@@ -233,7 +366,9 @@ export const isHistogram = settings =>
   settings["graph.x_axis._scale_original"] === "histogram" ||
   settings["graph.x_axis.scale"] === "histogram";
 export const isOrdinal = settings =>
-  !isTimeseries(settings) && !isHistogram(settings);
+  settings["graph.x_axis.scale"] === "ordinal";
+export const isLine = settings => settings.display === "line";
+export const isArea = settings => settings.display === "area";
 
 // bar histograms have special tick formatting:
 // * aligned with beginning of bar to show bin boundaries
@@ -267,13 +402,22 @@ function hasRemappingAndValuesAreStrings({ cols }, i = 0) {
 export const isRemappedToString = series =>
   hasRemappingAndValuesAreStrings(getFirstNonEmptySeries(series).data);
 
+export const hasClickBehavior = series =>
+  getIn(series, [0, "card", "visualization_settings", "click_behavior"]) !=
+  null;
+
 // is this a dashboard multiseries?
 // TODO: better way to detect this?
 export const isMultiCardSeries = series =>
   series.length > 1 &&
   getIn(series, [0, "card", "id"]) !== getIn(series, [1, "card", "id"]);
 
-const NULL_DISPLAY_VALUE = t`(empty)`;
 export function formatNull(value) {
   return value === null ? NULL_DISPLAY_VALUE : value;
+}
+
+// Hack: for numeric dimensions we have to replace null values
+// with anything else since crossfilter groups merge 0 and null
+export function replaceNullValuesForOrdinal(value) {
+  return value === null ? NULL_NUMERIC_VALUE : value;
 }

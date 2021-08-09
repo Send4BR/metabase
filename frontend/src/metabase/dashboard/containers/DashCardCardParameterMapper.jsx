@@ -1,5 +1,3 @@
-/* @flow */
-
 import React, { Component } from "react";
 import PropTypes from "prop-types";
 import { connect } from "react-redux";
@@ -141,6 +139,7 @@ export default class DashCardCardParameterMapper extends Component {
           </div>
         )}
 
+        <h4 className="text-medium mb1">{t`Column to filter on`}</h4>
         <ParameterTargetWidget
           target={target}
           onChange={this.handleChangeTarget}
@@ -172,14 +171,15 @@ export default class DashCardCardParameterMapper extends Component {
                   {disabled
                     ? t`No valid fields`
                     : selected
-                    ? selected.name
+                    ? formatSelected(selected)
                     : t`Select…`}
                 </span>
                 {selected ? (
                   <Icon
                     className="flex-align-right"
                     name="close"
-                    size={16}
+                    style={{ marginTop: 3 }}
+                    size={12}
                     onClick={e => {
                       this.handleChangeTarget(null);
                       e.stopPropagation();
@@ -189,7 +189,8 @@ export default class DashCardCardParameterMapper extends Component {
                   <Icon
                     className="flex-align-right"
                     name="chevrondown"
-                    size={16}
+                    style={{ marginTop: 2 }}
+                    size={12}
                   />
                 ) : null}
               </div>
@@ -204,4 +205,12 @@ export default class DashCardCardParameterMapper extends Component {
       </div>
     );
   }
+}
+
+function formatSelected({ name, sectionName }) {
+  if (sectionName == null) {
+    // for native question variables or field literals we just display the name
+    return name;
+  }
+  return `${sectionName}.${name}`;
 }

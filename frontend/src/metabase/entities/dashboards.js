@@ -1,5 +1,3 @@
-/* @flow */
-
 import {
   compose,
   withAction,
@@ -19,6 +17,7 @@ import { POST, DELETE } from "metabase/lib/api";
 import {
   canonicalCollectionId,
   getCollectionType,
+  normalizedCollection,
 } from "metabase/entities/collections";
 
 const FAVORITE_ACTION = `metabase/entities/dashboards/FAVORITE`;
@@ -27,6 +26,7 @@ const COPY_ACTION = `metabase/entities/dashboards/COPY`;
 
 const Dashboards = createEntity({
   name: "dashboards",
+  nameOne: "dashboard",
   path: "/api/dashboard",
 
   displayNameOne: t`dashboard`,
@@ -130,8 +130,10 @@ const Dashboards = createEntity({
   objectSelectors: {
     getFavorited: dashboard => dashboard && dashboard.favorite,
     getName: dashboard => dashboard && dashboard.name,
-    getUrl: dashboard => dashboard && Urls.dashboard(dashboard.id),
-    getIcon: dashboard => "dashboard",
+    getUrl: dashboard => dashboard && Urls.dashboard(dashboard),
+    getCollection: dashboard =>
+      dashboard && normalizedCollection(dashboard.collection),
+    getIcon: dashboard => ({ name: "dashboard" }),
     getColor: () => color("dashboard"),
   },
 
@@ -141,6 +143,7 @@ const Dashboards = createEntity({
         name: "name",
         title: t`Name`,
         placeholder: t`What is the name of your dashboard?`,
+        autoFocus: true,
         validate: name => (!name ? "Name is required" : null),
       },
       {

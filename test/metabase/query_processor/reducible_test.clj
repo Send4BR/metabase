@@ -1,18 +1,15 @@
 (ns metabase.query-processor.reducible-test
   "Some basic tests around very-low-level QP logic, and some of the new features of the QP (such as support for
   different reducing functions.)"
-  (:require [clojure
-             [string :as str]
-             [test :refer :all]]
-            [clojure.core.async :as a]
+  (:require [clojure.core.async :as a]
             [clojure.java.io :as io]
-            [metabase
-             [query-processor :as qp]
-             [test :as mt]
-             [util :as u]]
+            [clojure.string :as str]
+            [clojure.test :refer :all]
+            [metabase.query-processor :as qp]
             [metabase.query-processor.context.default :as context.default]
             [metabase.query-processor.reducible :as qp.reducible]
-            [metabase.util.files :as u.files]))
+            [metabase.test :as mt]
+            [metabase.util :as u]))
 
 (deftest quit-test
   (testing "async-qp should properly handle `quit` exceptions"
@@ -59,7 +56,7 @@
      :rff     print-rows-rff}))
 
 (deftest write-rows-to-file-test
-  (let [filename (str (u.files/get-path (System/getProperty "java.io.tmpdir") "out.txt"))]
+  (mt/with-temp-file [filename "out.txt"]
     (try
       (is (= 3
              (qp/process-query
@@ -73,7 +70,7 @@
              (str/split-lines (slurp filename))))
       (finally
         (u/ignore-exceptions
-          (.delete (io/file filename)))))))
+         (.delete (io/file filename)))))))
 
 (defn- maps-rff [metadata]
   (let [ks (mapv (comp keyword :name) (:cols metadata))]
@@ -163,3 +160,37 @@
                          (respond {:cols [{:name "n"}]}
                                   [[1] [2] [3] [4] [5]]))
              :rff      maps-rff})))))
+
+(deftest row-type-agnostic-test
+  (let [api-qp-middleware-options (delay (-> (mt/user-http-request :rasta :post 202 "dataset" (mt/mbql-query users {:limit 1}))
+                                             :json_query
+                                             :middleware))]
+    (mt/test-drivers (mt/normal-drivers)
+      (testing "All QP middleware should work regardless of the type of each row (#13475)"
+        (doseq [rows [[[1]
+                       [Integer/MAX_VALUE]]
+                      [(list 1)
+                       (list Integer/MAX_VALUE)]
+                      [(cons 1 nil)
+                       (cons Integer/MAX_VALUE nil)]
+                      [(lazy-seq [1])
+                       (lazy-seq [Integer/MAX_VALUE])]]]
+          (testing (format "rows = ^%s %s" (.getCanonicalName (class rows)) (pr-str rows))
+            (letfn [(process-query [& {:as additional-options}]
+                      (:post
+                       (mt/test-qp-middleware
+                        qp/default-middleware
+                        (merge
+                         {:database (mt/id)
+                          :type     :query
+                          :query    {:source-table (mt/id :venues)
+                                     :fields       [[:field-id (mt/id :venues :id)]]}}
+                         additional-options)
+                        rows)))]
+              (is (= [[1]
+                      [2147483647]]
+                     (process-query)))
+              (testing "Should work with the middleware options used by API requests as well"
+                (is (= [["1"]
+                        ["2147483647"]]
+                       (process-query :middleware @api-qp-middleware-options)))))))))))

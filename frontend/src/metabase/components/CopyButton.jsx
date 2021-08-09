@@ -1,5 +1,3 @@
-/* @flow */
-
 import React, { Component } from "react";
 
 import Icon from "metabase/components/Icon";
@@ -35,7 +33,7 @@ export default class CopyWidget extends Component {
     return (
       <Tooltip tooltip={t`Copied!`} isOpen={this.state.copied}>
         <CopyToClipboard text={value} onCopy={this.onCopy}>
-          <div className={className} style={style}>
+          <div className={className} style={style} data-testid="copy-button">
             <Icon name="copy" {...props} />
           </div>
         </CopyToClipboard>

@@ -20,7 +20,6 @@ const Metrics = createEntity({
     ) => Metrics.actions.update({ id }, { archived, revision_message }),
 
     // NOTE: DELETE not currently implemented
-    // $FlowFixMe: no official way to disable builtin actions yet
     delete: null,
   },
 
@@ -29,7 +28,7 @@ const Metrics = createEntity({
     getUrl: metric =>
       Urls.tableRowsQuery(metric.database_id, metric.table_id, metric.id),
     getColor: metric => color("accent1"),
-    getIcon: metric => "sum",
+    getIcon: metric => ({ name: "sum" }),
   },
 
   selectors: {

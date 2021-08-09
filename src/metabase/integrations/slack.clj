@@ -7,9 +7,8 @@
             [medley.core :as m]
             [metabase.models.setting :as setting :refer [defsetting]]
             [metabase.util :as u]
-            [metabase.util
-             [i18n :refer [deferred-tru trs tru]]
-             [schema :as su]]
+            [metabase.util.i18n :refer [deferred-tru trs tru]]
+            [metabase.util.schema :as su]
             [schema.core :as s]))
 
 ;; Define a setting which captures our Slack api token
@@ -54,8 +53,10 @@
             request (merge-with merge
                       {:query-params   {:token token}
                        :as             :stream
-                       :conn-timeout   1000
-                       :socket-timeout 1000}
+                       ;; use a relatively long connection timeout (10 seconds) in cases where we're fetching big
+                       ;; amounts of data -- see #11735
+                       :conn-timeout   10000
+                       :socket-timeout 10000}
                       request)]
         (try
           (handle-response (request-fn url request))
@@ -78,15 +79,19 @@
   (not-empty (get-in response [:response_metadata :next_cursor])))
 
 (def ^:private max-list-results
-  "Absolute maximum number of results to fetch from Slack API list endpoints. To prevent unbounded pagination of results."
-  1000)
+  "Absolute maximum number of results to fetch from Slack API list endpoints. To prevent unbounded pagination of
+  results. Don't set this too low -- some orgs have many thousands of channels (see #12978)"
+  10000)
 
 (defn- paged-list-request
   "Make a GET request to a Slack API list `endpoint`, returning a sequence of objects returned by the top level
   `results-key` in the response. If additional pages of results exist, fetches those lazily, up to a total of
   `max-list-results`."
   [endpoint results-key params]
-  (let [response (m/mapply GET endpoint params)]
+  ;; use default limit (page size) of 1000 instead of 100 so we don't end up making a hundred API requests for orgs
+  ;; with a huge number of channels or users.
+  (let [default-params {:limit 1000}
+        response       (m/mapply GET endpoint (merge default-params params))]
     (when (seq response)
       (take
        max-list-results
@@ -109,7 +114,7 @@
   (some (fn [channel]
           (when (= (:name channel) channel-name)
             channel))
-        (conversations-list :exclude_archived false)))
+        (conversations-list)))
 
 (s/defn valid-token?
   "Check whether a Slack token is valid by checking whether we can call `conversations.list` with it."
@@ -124,13 +129,17 @@
 (defn users-list
   "Calls Slack API `users.list` endpoint and returns the list of available users."
   [& {:as query-parameters}]
-  (paged-list-request "users.list" :members query-parameters))
+  (->> (paged-list-request "users.list" :members query-parameters)
+       ;; filter out deleted users and bots. At the time of this writing there's no way to do this in the Slack API
+       ;; itself so we need to do it after the fact.
+       (filter (complement :deleted))
+       (filter (complement :is_bot))))
 
 (defn- files-channel* []
   (or (channel-with-name files-channel-name)
       (let [message (str (tru "Slack channel named `metabase_files` is missing!")
                          " "
-                         (tru "Please create the channel in order to complete the Slack integration.")
+                         (tru "Please create or unarchive the channel in order to complete the Slack integration.")
                          " "
                          (tru "The channel is used for storing graphs that are included in Pulses and MetaBot answers."))]
         (log/error (u/format-color 'red message))
@@ -151,7 +160,7 @@
 (def ^:private NonEmptyByteArray
   (s/constrained
    (Class/forName "[B")
-   #(pos? (count %))
+   not-empty
    "Non-empty byte array"))
 
 (s/defn upload-file!

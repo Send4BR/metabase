@@ -1,57 +1,50 @@
 (ns metabase.driver.snowflake-test
   (:require [clojure.java.jdbc :as jdbc]
-            [clojure
-             [set :as set]
-             [string :as str]
-             [test :refer :all]]
-            [metabase
-             [driver :as driver]
-             [models :refer [Table]]
-             [query-processor :as qp]
-             [sync :as sync]
-             [test :as mt]
-             [util :as u]]
-            [metabase.driver.sql-jdbc
-             [connection :as sql-jdbc.conn]
-             [execute :as sql-jdbc.execute]]
-            [metabase.models
-             [database :refer [Database]]]
-            [metabase.test.data
-             [dataset-definitions :as dataset-defs]
-             [sql :as sql.tx]]
+            [clojure.set :as set]
+            [clojure.string :as str]
+            [clojure.test :refer :all]
+            [metabase.driver :as driver]
+            [metabase.driver.sql-jdbc.connection :as sql-jdbc.conn]
+            [metabase.models :refer [Table]]
+            [metabase.models.database :refer [Database]]
+            [metabase.query-processor :as qp]
+            [metabase.sync :as sync]
+            [metabase.test :as mt]
+            [metabase.test.data.dataset-definitions :as dataset-defs]
+            [metabase.test.data.sql :as sql.tx]
             [metabase.test.data.sql.ddl :as ddl]
+            [metabase.util :as u]
             [toucan.db :as db]))
 
-;;
 (deftest ddl-statements-test
   (testing "make sure we didn't break the code that is used to generate DDL statements when we add new test datasets"
     (testing "Create DB DDL statements"
-      (is (= "DROP DATABASE IF EXISTS \"v2_test-data\"; CREATE DATABASE \"v2_test-data\";"
+      (is (= "DROP DATABASE IF EXISTS \"v3_test-data\"; CREATE DATABASE \"v3_test-data\";"
              (sql.tx/create-db-sql :snowflake (mt/get-dataset-definition dataset-defs/test-data)))))
 
     (testing "Create Table DDL statements"
       (is (= (map
               #(str/replace % #"\s+" " ")
-              ["DROP TABLE IF EXISTS \"v2_test-data\".\"PUBLIC\".\"users\";"
-               "CREATE TABLE \"v2_test-data\".\"PUBLIC\".\"users\" (\"id\" INTEGER AUTOINCREMENT, \"name\" TEXT,
+              ["DROP TABLE IF EXISTS \"v3_test-data\".\"PUBLIC\".\"users\";"
+               "CREATE TABLE \"v3_test-data\".\"PUBLIC\".\"users\" (\"id\" INTEGER AUTOINCREMENT, \"name\" TEXT,
                 \"last_login\" TIMESTAMP_LTZ, \"password\" TEXT, PRIMARY KEY (\"id\")) ;"
-               "DROP TABLE IF EXISTS \"v2_test-data\".\"PUBLIC\".\"categories\";"
-               "CREATE TABLE \"v2_test-data\".\"PUBLIC\".\"categories\" (\"id\" INTEGER AUTOINCREMENT, \"name\" TEXT,
+               "DROP TABLE IF EXISTS \"v3_test-data\".\"PUBLIC\".\"categories\";"
+               "CREATE TABLE \"v3_test-data\".\"PUBLIC\".\"categories\" (\"id\" INTEGER AUTOINCREMENT, \"name\" TEXT,
                 PRIMARY KEY (\"id\")) ;"
-               "DROP TABLE IF EXISTS \"v2_test-data\".\"PUBLIC\".\"venues\";"
-               "CREATE TABLE \"v2_test-data\".\"PUBLIC\".\"venues\" (\"id\" INTEGER AUTOINCREMENT, \"name\" TEXT,
+               "DROP TABLE IF EXISTS \"v3_test-data\".\"PUBLIC\".\"venues\";"
+               "CREATE TABLE \"v3_test-data\".\"PUBLIC\".\"venues\" (\"id\" INTEGER AUTOINCREMENT, \"name\" TEXT,
                 \"category_id\" INTEGER, \"latitude\" FLOAT, \"longitude\" FLOAT, \"price\" INTEGER, PRIMARY KEY (\"id\")) ;"
-               "DROP TABLE IF EXISTS \"v2_test-data\".\"PUBLIC\".\"checkins\";"
-               "CREATE TABLE \"v2_test-data\".\"PUBLIC\".\"checkins\" (\"id\" INTEGER AUTOINCREMENT, \"date\" DATE,
+               "DROP TABLE IF EXISTS \"v3_test-data\".\"PUBLIC\".\"checkins\";"
+               "CREATE TABLE \"v3_test-data\".\"PUBLIC\".\"checkins\" (\"id\" INTEGER AUTOINCREMENT, \"date\" DATE,
                 \"user_id\" INTEGER, \"venue_id\" INTEGER, PRIMARY KEY (\"id\")) ;"
-               "ALTER TABLE \"v2_test-data\".\"PUBLIC\".\"venues\" ADD CONSTRAINT \"gory_id_categories_-1524018980\"
-                FOREIGN KEY (\"category_id\") REFERENCES \"v2_test-data\".\"PUBLIC\".\"categories\" (\"id\");"
-               "ALTER TABLE \"v2_test-data\".\"PUBLIC\".\"checkins\" ADD CONSTRAINT \"ckins_user_id_users_-230440067\"
-                FOREIGN KEY (\"user_id\") REFERENCES \"v2_test-data\".\"PUBLIC\".\"users\" (\"id\");"
-               "ALTER TABLE \"v2_test-data\".\"PUBLIC\".\"checkins\" ADD CONSTRAINT \"kins_venue_id_venues_621212269\"
-                FOREIGN KEY (\"venue_id\") REFERENCES \"v2_test-data\".\"PUBLIC\".\"venues\" (\"id\");"])
-             (ddl/create-db-ddl-statements :snowflake (-> (mt/get-dataset-definition dataset-defs/test-data)
-                                                          (update :database-name #(str "v2_" %)))))))))
+               "ALTER TABLE \"v3_test-data\".\"PUBLIC\".\"venues\" ADD CONSTRAINT \"egory_id_categories_-740504465\"
+                FOREIGN KEY (\"category_id\") REFERENCES \"v3_test-data\".\"PUBLIC\".\"categories\" (\"id\");"
+               "ALTER TABLE \"v3_test-data\".\"PUBLIC\".\"checkins\" ADD CONSTRAINT \"ckins_user_id_users_1638713823\"
+                FOREIGN KEY (\"user_id\") REFERENCES \"v3_test-data\".\"PUBLIC\".\"users\" (\"id\");"
+               "ALTER TABLE \"v3_test-data\".\"PUBLIC\".\"checkins\" ADD CONSTRAINT \"ins_venue_id_venues_-833167948\"
+                FOREIGN KEY (\"venue_id\") REFERENCES \"v3_test-data\".\"PUBLIC\".\"venues\" (\"id\");"])
+             (ddl/create-db-tables-ddl-statements :snowflake (-> (mt/get-dataset-definition dataset-defs/test-data)
+                                                                 (update :database-name #(str "v3_" %)))))))))
 
 ;; TODO -- disabled because these are randomly failing, will figure out when I'm back from vacation. I think it's a
 ;; bug in the JDBC driver -- Cam
@@ -90,13 +83,15 @@
         (mt/with-temp Database [database {:engine :snowflake, :details (assoc details :db "views_test")}]
           (let [sync! #(sync/sync-database! database)]
             ;; create a view
-            (jdbc/execute! spec ["CREATE VIEW \"views_test\".\"PUBLIC\".\"example_view\" AS SELECT 'hello world' AS \"name\";"])
+            (doseq [statement ["CREATE VIEW \"views_test\".\"PUBLIC\".\"example_view\" AS SELECT 'hello world' AS \"name\";"
+                               "GRANT SELECT ON \"views_test\".\"PUBLIC\".\"example_view\" TO PUBLIC;"]]
+              (jdbc/execute! spec [statement]))
             ;; now sync the DB
             (sync!)
             ;; now take a look at the Tables in the database, there should be an entry for the view
             (is (= [{:name "example_view"}]
                    (map (partial into {})
-                        (db/select [Table :name] :db_id (u/get-id database)))))))))))
+                        (db/select [Table :name] :db_id (u/the-id database)))))))))))
 
 (deftest describe-table-test
   (mt/test-driver :snowflake
@@ -139,17 +134,16 @@
     (testing "Make sure temporal parameters are set and returned correctly when report-timezone is set (#11036)"
       (letfn [(run-query []
                 (mt/rows
-                  (qp/process-query
-                    (merge
-                     {:database   (mt/id)
-                      :type       :native
-                      :native     {:query         (str "SELECT {{filter_date}}")
-                                   :template-tags {:filter_date {:name         "filter_date"
-                                                                 :display_name "Just A Date"
-                                                                 :type         "date"}}}
-                      :parameters [{:type   "date/single"
-                                    :target ["variable" ["template-tag" "filter_date"]]
-                                    :value  "2014-08-02"}]}))))]
+                 (qp/process-query
+                  {:database   (mt/id)
+                   :type       :native
+                   :native     {:query         (str "SELECT {{filter_date}}")
+                                :template-tags {:filter_date {:name         "filter_date"
+                                                              :display_name "Just A Date"
+                                                              :type         "date"}}}
+                   :parameters [{:type   "date/single"
+                                 :target ["variable" ["template-tag" "filter_date"]]
+                                 :value  "2014-08-02"}]})))]
         (testing "baseline"
           (is (= [["2014-08-02T00:00:00Z"]]
                  (run-query))))
@@ -160,20 +154,19 @@
     (testing "Make sure temporal values are returned correctly when report-timezone is set (#11036)"
       (letfn [(run-query []
                 (mt/rows
-                  (qp/process-query
-                    (merge
-                     {:database   (mt/id)
-                      :type       :native
-                      :native     {:query         (str "SELECT {{filter_date}}, \"last_login\" "
-                                                       "FROM \"v2_test-data\".\"PUBLIC\".\"users\" "
-                                                       "WHERE date_trunc('day', CAST(\"last_login\" AS timestamp))"
-                                                       "    = date_trunc('day', CAST({{filter_date}} AS timestamp))")
-                                   :template-tags {:filter_date {:name         "filter_date"
-                                                                 :display_name "Just A Date"
-                                                                 :type         "date"}}}
-                      :parameters [{:type   "date/single"
-                                    :target ["variable" ["template-tag" "filter_date"]]
-                                    :value  "2014-08-02"}]}))))]
+                 (qp/process-query
+                  {:database   (mt/id)
+                   :type       :native
+                   :native     {:query         (str "SELECT {{filter_date}}, \"last_login\" "
+                                                    "FROM \"v3_test-data\".\"PUBLIC\".\"users\" "
+                                                    "WHERE date_trunc('day', CAST(\"last_login\" AS timestamp))"
+                                                    "    = date_trunc('day', CAST({{filter_date}} AS timestamp))")
+                                :template-tags {:filter_date {:name         "filter_date"
+                                                              :display_name "Just A Date"
+                                                              :type         "date"}}}
+                   :parameters [{:type   "date/single"
+                                 :target ["variable" ["template-tag" "filter_date"]]
+                                 :value  "2014-08-02"}]})))]
         (testing "baseline (no report-timezone set)"
           (is (= [["2014-08-02T00:00:00Z" "2014-08-02T12:30:00Z"]
                   ["2014-08-02T00:00:00Z" "2014-08-02T09:30:00Z"]]
@@ -183,3 +176,13 @@
                   ["2014-08-02T00:00:00-07:00" "2014-08-02T02:30:00-07:00"]]
                  (mt/with-temporary-setting-values [report-timezone "US/Pacific"]
                    (run-query)))))))))
+
+(deftest normalize-test
+  (mt/test-driver :snowflake
+    (testing "details should be normalized coming out of the DB"
+      (mt/with-temp Database [db {:name    "Legacy Snowflake DB"
+                                  :engine  :snowflake,
+                                  :details {:account  "my-instance"
+                                            :regionid "us-west-1"}}]
+                             (is (= {:account "my-instance.us-west-1"}
+                                    (:details db)))))))

@@ -1,17 +1,17 @@
 (ns metabase.driver.common
   "Shared definitions and helper functions for use across different drivers."
-  (:require [clj-time
-             [coerce :as tcoerce]
-             [core :as time]
-             [format :as tformat]]
+  (:require [clj-time.coerce :as tcoerce]
+            [clj-time.core :as time]
+            [clj-time.format :as tformat]
             [clojure.tools.logging :as log]
-            [metabase
-             [driver :as driver]
-             [util :as u]]
+            [metabase.driver :as driver]
             [metabase.driver.util :as driver.u]
+            [metabase.models.setting :as setting]
             [metabase.query-processor.context.default :as context.default]
             [metabase.query-processor.store :as qp.store]
-            [metabase.util.i18n :refer [deferred-tru trs tru]])
+            [metabase.util :as u]
+            [metabase.util.i18n :refer [deferred-tru trs tru]]
+            [schema.core :as s])
   (:import java.text.SimpleDateFormat
            org.joda.time.DateTime
            org.joda.time.format.DateTimeFormatter))
@@ -209,8 +209,8 @@
                             ;; need to initialize the store since we're calling `execute-reducible-query` directly
                             ;; instead of going thru normal QP pipeline
                             (qp.store/with-store
-                              (qp.store/fetch-and-store-database! (u/get-id database))
-                              (let [query {:database (u/get-id database), :native {:query native-query}}
+                              (qp.store/fetch-and-store-database! (u/the-id database))
+                              (let [query {:database (u/the-id database), :native {:query native-query}}
                                     reduce (fn [metadata reducible-rows]
                                              (transduce
                                               identity
@@ -289,7 +289,9 @@
   []
   ((comp (filter some?) (take column-info-sample-size) (map class))
    (fn
-     ([] (java.util.HashMap. {nil 0})) ; fallback to keep `max-key` happy if no values
+     ([]
+      (doto (java.util.HashMap.)
+        (.put nil 0)))                  ; fallback to keep `max-key` happy if no values
      ([^java.util.HashMap freqs, klass]
       (.put freqs klass (inc (.getOrDefault freqs klass 0)))
       freqs)
@@ -298,3 +300,15 @@
            (apply max-key val)
            key
            class->base-type)))))
+
+(def ^:private days-of-week
+  [:monday :tuesday :wednesday :thursday :friday :saturday :sunday])
+
+(s/defn start-of-week-offset :- s/Int
+  "Return the offset for start of week to have the week start on `setting/start-of-week` given  `driver`."
+  [driver]
+  (let [db-start-of-week     (.indexOf ^clojure.lang.PersistentVector days-of-week (driver/db-start-of-week driver))
+        target-start-of-week (.indexOf ^clojure.lang.PersistentVector days-of-week (setting/get-keyword :start-of-week))
+        delta                (int (- target-start-of-week db-start-of-week))]
+    (* (Integer/signum delta)
+       (- 7 (Math/abs delta)))))

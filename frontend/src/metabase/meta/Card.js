@@ -1,9 +1,8 @@
-/* @flow */
-
 import {
   getTemplateTagParameters,
   getParameterTargetFieldId,
   parameterToMBQLFilter,
+  normalizeParameterValue,
 } from "metabase/meta/Parameter";
 
 import * as Query from "metabase/lib/query/query";
@@ -83,10 +82,16 @@ export function cardQueryIsEquivalent(cardA: Card, cardB: Card): boolean {
   );
 }
 
-export function cardIsEquivalent(cardA: Card, cardB: Card): boolean {
+export function cardIsEquivalent(
+  cardA: Card,
+  cardB: Card,
+  { checkParameters = false }: { checkParameters: boolean } = {},
+): boolean {
   return (
     cardQueryIsEquivalent(cardA, cardB) &&
-    cardVisualizationIsEquivalent(cardA, cardB)
+    cardVisualizationIsEquivalent(cardA, cardB) &&
+    (!checkParameters ||
+      _.isEqual(cardA.parameters || [], cardB.parameters || []))
   );
 }
 
@@ -186,19 +191,21 @@ export function applyParameters(
             parameter_id: parameter.id,
           },
     );
+
+    const type = parameter.type;
     if (mapping) {
       // mapped target, e.x. on a dashboard
       datasetQuery.parameters.push({
-        type: parameter.type,
+        type,
+        value: normalizeParameterValue(type, value),
         target: mapping.target,
-        value: value,
       });
     } else if (parameter.target) {
       // inline target, e.x. on a card
       datasetQuery.parameters.push({
-        type: parameter.type,
+        type,
+        value: normalizeParameterValue(type, value),
         target: parameter.target,
-        value: value,
       });
     }
   }
@@ -220,7 +227,7 @@ export function questionUrlWithParameters(
   cardIsDirty: boolean = true,
 ): DatasetQuery {
   if (!card.dataset_query) {
-    return Urls.question(card.id);
+    return Urls.question(card);
   }
 
   card = Utils.copy(card);
@@ -240,7 +247,7 @@ export function questionUrlWithParameters(
     datasetQuery.parameters &&
     datasetQuery.parameters.length === 0
   ) {
-    return Urls.question(card.id);
+    return Urls.question(card);
   }
 
   const query = {};

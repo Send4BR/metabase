@@ -1,3 +1,4 @@
+/* eslint-disable react/prop-types */
 import React, { Component } from "react";
 import { Link } from "react-router";
 import { connect } from "react-redux";
@@ -24,6 +25,7 @@ export default class LdapAndEmailForm extends Component {
 
   render() {
     const ldapEnabled = Settings.ldapEnabled();
+    const rememberMeDisabled = Settings.get("session-cookies");
     return (
       <Form onSubmit={this.onSubmit}>
         {({ values, Form, FormField, FormSubmit, FormMessage }) => (
@@ -36,6 +38,7 @@ export default class LdapAndEmailForm extends Component {
               }
               placeholder={t`youlooknicetoday@email.com`}
               validate={ldapEnabled ? validate.required() : validate.email()}
+              autoFocus
             />
             <FormField
               name="password"
@@ -49,11 +52,12 @@ export default class LdapAndEmailForm extends Component {
               type="checkbox"
               title={t`Remember me`}
               initial={true}
+              hidden={rememberMeDisabled}
               horizontal
             />
             <FormMessage />
-            <div className="Form-actions flex align-center">
-              <FormSubmit>{t`Sign in`}</FormSubmit>
+            <div className="Form-actions text-centered">
+              <FormSubmit className="block full mb2">{t`Sign in`}</FormSubmit>
               <ForgotPasswordLink credentials={values} />
             </div>
           </Form>
@@ -71,7 +75,7 @@ const ForgotPasswordLink = ({ credentials = {} }) => (
         ? "?email=" + encodeURIComponent(credentials.username)
         : "")
     }
-    className="text-right ml-auto link"
+    className="text-light text-brand-hover"
     onClick={e => {
       window.OSX ? window.OSX.resetPassword() : null;
     }}

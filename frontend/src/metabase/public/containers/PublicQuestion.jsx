@@ -1,5 +1,4 @@
-/* @flow */
-
+/* eslint-disable react/prop-types */
 import React, { Component } from "react";
 import { connect } from "react-redux";
 
@@ -8,6 +7,7 @@ import QueryDownloadWidget from "metabase/query_builder/components/QueryDownload
 import LoadingAndErrorWrapper from "metabase/components/LoadingAndErrorWrapper";
 import ExplicitSize from "metabase/components/ExplicitSize";
 import EmbedFrame from "../components/EmbedFrame";
+import title from "metabase/hoc/Title";
 
 import type { Card } from "metabase-types/types/Card";
 import type { Dataset } from "metabase-types/types/Dataset";
@@ -25,6 +25,7 @@ import {
   EmbedApi,
   setPublicQuestionEndpoints,
   setEmbedQuestionEndpoints,
+  maybeUsePivotEndpoint,
 } from "metabase/services";
 
 import { setErrorPage } from "metabase/redux/app";
@@ -65,6 +66,7 @@ const mapDispatchToProps = {
   mapStateToProps,
   mapDispatchToProps,
 )
+@title(({ card }) => card && card.name)
 @ExplicitSize()
 export default class PublicQuestion extends Component {
   props: Props;
@@ -75,12 +77,12 @@ export default class PublicQuestion extends Component {
     this.state = {
       card: null,
       result: null,
+      initialized: false,
       parameterValues: {},
     };
   }
 
-  // $FlowFixMe
-  async componentWillMount() {
+  async UNSAFE_componentWillMount() {
     const {
       setErrorPage,
       params: { uuid, token },
@@ -115,26 +117,40 @@ export default class PublicQuestion extends Component {
         parameterValues[String(parameter.id)] = query[parameter.slug];
       }
 
-      this.setState({ card, parameterValues }, this.run);
+      this.setState({ card, parameterValues }, async () => {
+        await this.run();
+        this.setState({ initialized: true });
+      });
     } catch (error) {
       console.error("error", error);
       setErrorPage(error);
     }
   }
 
-  setParameterValue = (id: string, value: string) => {
+  setParameterValue = (parameterId, value) => {
     this.setState(
       {
         parameterValues: {
           ...this.state.parameterValues,
-          [id]: value,
+          [parameterId]: value,
         },
       },
       this.run,
     );
   };
 
-  // $FlowFixMe: setState expects return type void
+  setMultipleParameterValues = parameterValues => {
+    this.setState(
+      {
+        parameterValues: {
+          ...this.state.parameterValues,
+          ...parameterValues,
+        },
+      },
+      this.run,
+    );
+  };
+
   run = async (): void => {
     const {
       setErrorPage,
@@ -154,14 +170,14 @@ export default class PublicQuestion extends Component {
       let newResult;
       if (token) {
         // embeds apply parameter values server-side
-        newResult = await EmbedApi.cardQuery({
+        newResult = await maybeUsePivotEndpoint(EmbedApi.cardQuery, card)({
           token,
           ...getParametersBySlug(parameters, parameterValues),
         });
       } else if (uuid) {
         // public links currently apply parameters client-side
         const datasetQuery = applyParameters(card, parameters, parameterValues);
-        newResult = await PublicApi.cardQuery({
+        newResult = await maybeUsePivotEndpoint(PublicApi.cardQuery, card)({
           uuid,
           parameters: JSON.stringify(datasetQuery.parameters),
         });
@@ -180,7 +196,7 @@ export default class PublicQuestion extends Component {
     const {
       params: { uuid, token },
     } = this.props;
-    const { card, result, parameterValues } = this.state;
+    const { card, result, initialized, parameterValues } = this.state;
 
     const actionButtons = result && (
       <QueryDownloadWidget
@@ -197,14 +213,15 @@ export default class PublicQuestion extends Component {
       <EmbedFrame
         name={card && card.name}
         description={card && card.description}
-        parameters={parameters}
+        parameters={initialized ? parameters : []}
         actionButtons={actionButtons}
         parameterValues={parameterValues}
         setParameterValue={this.setParameterValue}
+        setMultipleParameterValues={this.setMultipleParameterValues}
       >
         <LoadingAndErrorWrapper
           className="flex-full"
-          loading={!result}
+          loading={!result || !initialized}
           error={typeof result === "string" ? result : null}
           noWrapper
         >
@@ -215,7 +232,6 @@ export default class PublicQuestion extends Component {
               className="full flex-full z1"
               onUpdateVisualizationSettings={settings =>
                 this.setState({
-                  // $FlowFixMe
                   result: updateIn(
                     result,
                     ["card", "visualization_settings"],
@@ -227,7 +243,6 @@ export default class PublicQuestion extends Component {
               showTitle={false}
               isDashboard
               mode={PublicMode}
-              // $FlowFixMe: metadata provided by @connect
               metadata={this.props.metadata}
               onChangeCardAndRun={() => {}}
             />

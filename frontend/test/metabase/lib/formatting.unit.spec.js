@@ -1,11 +1,12 @@
 import { isElementOfType } from "react-dom/test-utils";
-import moment from "moment";
+import moment from "moment-timezone";
 
 import {
   formatNumber,
   formatValue,
   formatUrl,
   formatDateTimeWithUnit,
+  slugify,
 } from "metabase/lib/formatting";
 import ExternalLink from "metabase/components/ExternalLink";
 import { TYPE } from "metabase/lib/types";
@@ -25,10 +26,30 @@ describe("formatting", () => {
       expect(formatNumber(-10)).toEqual("-10");
       expect(formatNumber(-99999999)).toEqual("-99,999,999");
     });
+    it("should format large numbers correctly with non-default number separator", () => {
+      const options = { number_separators: ",." };
+      expect(formatNumber(10.1, options)).toEqual("10,1");
+      expect(formatNumber(99999999.9, options)).toEqual("99.999.999,9");
+      expect(formatNumber(-10.1, options)).toEqual("-10,1");
+      expect(formatNumber(-99999999.9, options)).toEqual("-99.999.999,9");
+    });
     it("should format to 2 significant digits", () => {
       expect(formatNumber(1 / 3)).toEqual("0.33");
       expect(formatNumber(-1 / 3)).toEqual("-0.33");
       expect(formatNumber(0.0001 / 3)).toEqual("0.000033");
+    });
+    describe("in enclosing negative mode", () => {
+      it("should format -4 as (4)", () => {
+        expect(formatNumber(-4, { negativeInParentheses: true })).toEqual(
+          "(4)",
+        );
+      });
+      it("should format 7 as 7", () => {
+        expect(formatNumber(7, { negativeInParentheses: true })).toEqual("7");
+      });
+      it("should format 0 as 0", () => {
+        expect(formatNumber(0, { negativeInParentheses: true })).toEqual("0");
+      });
     });
     describe("in compact mode", () => {
       it("should format 0 as 0", () => {
@@ -154,26 +175,26 @@ describe("formatting", () => {
     it("should format numbers with commas", () => {
       expect(
         formatValue(12345, {
-          column: { base_type: TYPE.Number, special_type: TYPE.Number },
+          column: { base_type: TYPE.Number, semantic_type: TYPE.Number },
         }),
       ).toEqual("12,345");
     });
     it("should format zip codes without commas", () => {
       expect(
         formatValue(12345, {
-          column: { base_type: TYPE.Number, special_type: TYPE.ZipCode },
+          column: { base_type: TYPE.Number, semantic_type: TYPE.ZipCode },
         }),
       ).toEqual("12345");
     });
     it("should format latitude and longitude columns correctly", () => {
       expect(
         formatValue(37.7749, {
-          column: { base_type: TYPE.Number, special_type: TYPE.Latitude },
+          column: { base_type: TYPE.Number, semantic_type: TYPE.Latitude },
         }),
       ).toEqual("37.77490000° N");
       expect(
         formatValue(-122.4194, {
-          column: { base_type: TYPE.Number, special_type: TYPE.Longitude },
+          column: { base_type: TYPE.Number, semantic_type: TYPE.Longitude },
         }),
       ).toEqual("122.41940000° W");
     });
@@ -185,22 +206,54 @@ describe("formatting", () => {
         ),
       ).toEqual(true);
     });
+    it("should not return an ExternalLink for links in jsx + rich mode if there's click behavior", () => {
+      const formatted = formatValue("http://metabase.com/", {
+        jsx: true,
+        rich: true,
+        click_behavior: {
+          linkTemplate: "foo",
+          linkTextTemplate: "foo",
+          linkType: "url",
+          type: "link",
+        },
+        clicked: {},
+      });
+      // it's not actually a link
+      expect(isElementOfType(formatted, ExternalLink)).toEqual(false);
+      // but it's formatted as a link
+      expect(formatted.props.className).toEqual("link link--wrappable");
+    });
+    it("should render image with a click behavior in jsx + rich mode (metabase#17161)", () => {
+      const formatted = formatValue("http://metabase.com/logo.png", {
+        jsx: true,
+        rich: true,
+        view_as: "image",
+        click_behavior: {
+          linkTemplate: "foo",
+          linkType: "url",
+          type: "link",
+        },
+        clicked: {},
+      });
+      expect(formatted.type).toEqual("img");
+      expect(formatted.props.src).toEqual("http://metabase.com/logo.png");
+    });
     it("should return a component for email addresses in jsx + rich mode", () => {
       expect(
         isElementOfType(
-          formatValue("tom@metabase.com", { jsx: true, rich: true }),
+          formatValue("tom@metabase.test", { jsx: true, rich: true }),
           ExternalLink,
         ),
       ).toEqual(true);
     });
-    it("should not add mailto prefix if there's a different special type", () => {
+    it("should not add mailto prefix if there's a different semantic type", () => {
       expect(
-        formatValue("foobar@example.com", {
+        formatValue("foobar@example.test", {
           jsx: true,
           rich: true,
-          column: { special_type: "type/PK" },
+          column: { semantic_type: "type/PK" },
         }),
-      ).toEqual("foobar@example.com");
+      ).toEqual("foobar@example.test");
     });
     it("should display hour-of-day with 12 hour clock", () => {
       expect(
@@ -220,13 +273,13 @@ describe("formatting", () => {
         formatValue(24, {
           date_style: null,
           time_enabled: "minutes",
-          time_style: "k:mm",
+          time_style: "HH:mm",
           column: {
             base_type: "type/DateTime",
             unit: "hour-of-day",
           },
         }),
-      ).toEqual("24:00");
+      ).toEqual("00:00");
     });
   });
 
@@ -249,7 +302,7 @@ describe("formatting", () => {
       ).toEqual(true);
       expect(
         isElementOfType(
-          formatUrl("mailto:tom@metabase.com", { jsx: true, rich: true }),
+          formatUrl("mailto:tom@metabase.test", { jsx: true, rich: true }),
           ExternalLink,
         ),
       ).toEqual(true);
@@ -260,7 +313,7 @@ describe("formatting", () => {
           formatUrl("myproto:some-custom-thing", {
             jsx: true,
             rich: true,
-            column: { special_type: TYPE.URL },
+            column: { semantic_type: TYPE.URL },
           }),
           ExternalLink,
         ),
@@ -271,7 +324,7 @@ describe("formatting", () => {
         formatUrl("invalid-blah-blah-blah", {
           jsx: true,
           rich: true,
-          column: { special_type: TYPE.URL },
+          column: { semantic_type: TYPE.URL },
         }),
       ).toEqual("invalid-blah-blah-blah");
     });
@@ -299,14 +352,84 @@ describe("formatting", () => {
         }),
       ).toEqual("data:text/plain;charset=utf-8,hello%20world");
     });
-    it("should return link component for type/URL and  view_as = link", () => {
-      const formatted = formatUrl("http://whatever", {
-        jsx: true,
-        rich: true,
-        column: { special_type: TYPE.URL },
-        view_as: "link",
+
+    describe("when view_as = link", () => {
+      it("should return link component for type/URL and  view_as = link", () => {
+        const formatted = formatUrl("http://whatever", {
+          jsx: true,
+          rich: true,
+          column: { semantic_type: TYPE.URL },
+          view_as: "link",
+        });
+        expect(isElementOfType(formatted, ExternalLink)).toEqual(true);
       });
-      expect(isElementOfType(formatted, ExternalLink)).toEqual(true);
+
+      it("should return link component using link_url and link_text when specified", () => {
+        const formatted = formatUrl("http://not.metabase.com", {
+          jsx: true,
+          rich: true,
+          link_text: "metabase link",
+          link_url: "http://metabase.com",
+          view_as: "link",
+          clicked: {},
+        });
+
+        expect(isElementOfType(formatted, ExternalLink)).toEqual(true);
+        expect(formatted.props.children).toEqual("metabase link");
+        expect(formatted.props.href).toEqual("http://metabase.com");
+      });
+
+      it("should return link component using link_text and the value as url when link_url is empty", () => {
+        const formatted = formatUrl("http://metabase.com", {
+          jsx: true,
+          rich: true,
+          link_text: "metabase link",
+          link_url: "",
+          view_as: "link",
+          clicked: {},
+        });
+
+        expect(isElementOfType(formatted, ExternalLink)).toEqual(true);
+        expect(formatted.props.children).toEqual("metabase link");
+        expect(formatted.props.href).toEqual("http://metabase.com");
+      });
+
+      it("should return link component using link_url and the value as text when link_text is empty", () => {
+        const formatted = formatUrl("metabase link", {
+          jsx: true,
+          rich: true,
+          link_text: "",
+          link_url: "http://metabase.com",
+          view_as: "link",
+          clicked: {},
+        });
+
+        expect(isElementOfType(formatted, ExternalLink)).toEqual(true);
+        expect(formatted.props.children).toEqual("metabase link");
+        expect(formatted.props.href).toEqual("http://metabase.com");
+      });
+
+      it("should not return an ExternalLink in jsx + rich mode if there's click behavior", () => {
+        const formatted = formatValue("http://metabase.com/", {
+          jsx: true,
+          rich: true,
+          click_behavior: {
+            linkTemplate: "foo",
+            linkTextTemplate: "bar",
+            linkType: "url",
+            type: "link",
+          },
+          link_text: "metabase link",
+          link_url: "http://metabase.com",
+          view_as: "link",
+          clicked: {},
+        });
+
+        // it is not a link set on the question level
+        expect(isElementOfType(formatted, ExternalLink)).toEqual(false);
+        // it is formatted as a link cell for the dashboard level click behavior
+        expect(formatted.props.className).toEqual("link link--wrappable");
+      });
     });
 
     it("should not crash if column is null", () => {
@@ -329,7 +452,7 @@ describe("formatting", () => {
       ).toEqual("July 7, 2019 – July 13, 2019");
     });
 
-    it("should always format week ranges in en locale", () => {
+    it("should always format week ranges according to returned data", () => {
       try {
         // globally set locale to es
         moment.locale("es");
@@ -342,6 +465,26 @@ describe("formatting", () => {
         // globally reset locale
         moment.locale(false);
       }
+    });
+  });
+
+  describe("slugify", () => {
+    it("should slugify Chinese", () => {
+      expect(slugify("類型")).toEqual("%E9%A1%9E%E5%9E%8B");
+    });
+
+    it("should slugify multiple words", () => {
+      expect(slugify("Test Parameter")).toEqual("test_parameter");
+    });
+
+    it("should slugify Russian", () => {
+      expect(slugify("русский язык")).toEqual(
+        "%D1%80%D1%83%D1%81%D1%81%D0%BA%D0%B8%D0%B9_%D1%8F%D0%B7%D1%8B%D0%BA",
+      );
+    });
+
+    it("should slugify diacritics", () => {
+      expect(slugify("än umlaut")).toEqual("%C3%A4n_umlaut");
     });
   });
 });

@@ -180,7 +180,7 @@ const Tables = createEntity({
   objectSelectors: {
     getUrl: table =>
       Urls.tableRowsQuery(table.database_id, table.table_id, null),
-    getIcon: table => "table",
+    getIcon: table => ({ name: "table" }),
     getColor: table => color("accent2"),
   },
 
@@ -202,10 +202,10 @@ const Tables = createEntity({
         }
       );
     },
-    getListUnfiltered: ({ entities }, { entityQuery }) =>
-      (entities.tables_list[JSON.stringify(entityQuery)] || []).map(
-        id => entities.tables[id],
-      ),
+    getListUnfiltered: ({ entities }, { entityQuery }) => {
+      const { list } = entities.tables_list[JSON.stringify(entityQuery)] || {};
+      return (list || []).map(id => entities.tables[id]);
+    },
     getTable: createSelector(
       // we wrap getMetadata to handle a circular dep issue
       [state => getMetadata(state), (state, props) => props.entityId],

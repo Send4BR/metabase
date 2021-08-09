@@ -1,8 +1,10 @@
+/* eslint-disable react/prop-types */
 import React from "react";
 import { Box, Flex } from "grid-styled";
 import { t, jt } from "ttag";
 import _ from "underscore";
 
+import { isDate } from "metabase/lib/schema_metadata";
 import { formatNumber, formatValue } from "metabase/lib/formatting";
 import { color } from "metabase/lib/colors";
 
@@ -51,6 +53,7 @@ export default class Smart extends React.Component {
       title: t`Switch positive / negative colors?`,
       widget: "toggle",
     },
+    click_behavior: {},
   };
 
   static isSensible({ insights }) {
@@ -91,8 +94,8 @@ export default class Smart extends React.Component {
       rawSeries,
     } = this.props;
 
-    const metricIndex = 1;
-    const dimensionIndex = 0;
+    const metricIndex = cols.findIndex(col => !isDate(col));
+    const dimensionIndex = cols.findIndex(col => isDate(col));
 
     const lastRow = rows[rows.length - 1];
     const value = lastRow && lastRow[metricIndex];
@@ -150,6 +153,11 @@ export default class Smart extends React.Component {
           column: cols[dimensionIndex],
         },
       ],
+      data: rows[rows.length - 1].map((value, index) => ({
+        value,
+        col: cols[index],
+      })),
+      settings,
     };
 
     const isClickable = visualizationIsClickable(clicked);

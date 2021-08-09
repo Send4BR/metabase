@@ -1,10 +1,8 @@
-import {
-  signInAsAdmin,
-  signOut,
-  restore,
-  popover,
-  withSampleDataset,
-} from "__support__/cypress";
+import { restore, popover } from "__support__/e2e/cypress";
+
+import { SAMPLE_DATASET } from "__support__/e2e/cypress_sample_dataset";
+
+const { ORDERS, PEOPLE } = SAMPLE_DATASET;
 
 const METABASE_SECRET_KEY =
   "24134bd93e081773fb178e8e1abb4e8a973822f7e19c872bd92c8d5a122ef63f";
@@ -21,31 +19,27 @@ const DASHBOARD_JWT_TOKEN =
 describe("scenarios > dashboard > parameters-embedded", () => {
   let dashboardId, questionId, dashcardId;
 
-  before(() => {
+  beforeEach(() => {
     restore();
-    signInAsAdmin();
+    cy.signInAsAdmin();
 
-    withSampleDataset(SAMPLE_DATASET => {
-      cy.log(SAMPLE_DATASET);
-      const { ORDERS, PEOPLE } = SAMPLE_DATASET;
-      cy.request("POST", `/api/field/${ORDERS.USER_ID}/dimension`, {
-        type: "external",
-        name: "User ID",
-        human_readable_field_id: PEOPLE.NAME,
-      });
+    cy.request("POST", `/api/field/${ORDERS.USER_ID}/dimension`, {
+      type: "external",
+      name: "User ID",
+      human_readable_field_id: PEOPLE.NAME,
+    });
 
-      [ORDERS.USER_ID, PEOPLE.NAME, PEOPLE.ID].forEach(id =>
-        cy.request("PUT", `/api/field/${id}`, { has_field_values: "search" }),
-      );
+    [ORDERS.USER_ID, PEOPLE.NAME, PEOPLE.ID].forEach(id =>
+      cy.request("PUT", `/api/field/${id}`, { has_field_values: "search" }),
+    );
 
-      createQuestion(SAMPLE_DATASET).then(res => {
-        questionId = res.body.id;
-        createDashboard().then(res => {
-          dashboardId = res.body.id;
-          addCardToDashboard({ dashboardId, questionId }).then(res => {
-            dashcardId = res.body.id;
-            mapParameters({ dashboardId, questionId, dashcardId });
-          });
+    createQuestion().then(res => {
+      questionId = res.body.id;
+      createDashboard().then(res => {
+        dashboardId = res.body.id;
+        addCardToDashboard({ dashboardId, questionId }).then(res => {
+          dashcardId = res.body.id;
+          mapParameters({ dashboardId, questionId, dashcardId });
         });
       });
     });
@@ -57,8 +51,30 @@ describe("scenarios > dashboard > parameters-embedded", () => {
     cy.request("PUT", `/api/setting/enable-public-sharing`, { value: true });
   });
 
+  describe("embeded params", () => {
+    it.skip("should be hideable", () => {
+      // Check viewable
+      cy.visit("/dashboard/2");
+      cy.icon("share").click();
+      cy.findByText("Embed this dashboard in an application").click();
+
+      cy.findByText("Parameters");
+      cy.get(".Modal--full").within(() => {
+        cy.findByText("Id");
+        cy.findByText("User");
+        cy.findAllByText("Disabled").should("have.length", 4);
+      });
+
+      // Check hideable
+      cy.visit("/dashboard/2#hide_parameters=id%2Cname");
+      cy.reload();
+      cy.findByText("User");
+      cy.findByText("Name").should("not.exist");
+    });
+  });
+
   describe("private question", () => {
-    beforeEach(signInAsAdmin);
+    beforeEach(cy.signInAsAdmin);
 
     sharedParametersTests(() => {
       cy.visit(`/question/${questionId}`);
@@ -70,12 +86,11 @@ describe("scenarios > dashboard > parameters-embedded", () => {
 
   describe("public question", () => {
     let uuid;
-    before(() => {
-      signInAsAdmin();
+    beforeEach(() => {
       cy.request("POST", `/api/card/${questionId}/public_link`).then(
         res => (uuid = res.body.uuid),
       );
-      signOut();
+      cy.signOut();
     });
 
     sharedParametersTests(() => {
@@ -87,8 +102,7 @@ describe("scenarios > dashboard > parameters-embedded", () => {
   });
 
   describe("embedded question", () => {
-    before(() => {
-      signInAsAdmin();
+    beforeEach(() => {
       cy.request("PUT", `/api/card/${questionId}`, {
         embedding_params: {
           id: "enabled",
@@ -98,7 +112,7 @@ describe("scenarios > dashboard > parameters-embedded", () => {
         },
         enable_embedding: true,
       });
-      signOut();
+      cy.signOut();
     });
 
     sharedParametersTests(() => {
@@ -110,7 +124,7 @@ describe("scenarios > dashboard > parameters-embedded", () => {
   });
 
   describe("private dashboard", () => {
-    beforeEach(signInAsAdmin);
+    beforeEach(cy.signInAsAdmin);
 
     sharedParametersTests(() => {
       cy.visit(`/dashboard/${dashboardId}`);
@@ -122,12 +136,11 @@ describe("scenarios > dashboard > parameters-embedded", () => {
 
   describe("public dashboard", () => {
     let uuid;
-    before(() => {
-      signInAsAdmin();
+    beforeEach(() => {
       cy.request("POST", `/api/dashboard/${dashboardId}/public_link`).then(
         res => (uuid = res.body.uuid),
       );
-      signOut();
+      cy.signOut();
     });
 
     sharedParametersTests(() => {
@@ -139,8 +152,7 @@ describe("scenarios > dashboard > parameters-embedded", () => {
   });
 
   describe("embedded dashboard", () => {
-    before(() => {
-      signInAsAdmin();
+    beforeEach(() => {
       cy.request("PUT", `/api/dashboard/${dashboardId}`, {
         embedding_params: {
           id: "enabled",
@@ -150,7 +162,7 @@ describe("scenarios > dashboard > parameters-embedded", () => {
         },
         enable_embedding: true,
       });
-      signOut();
+      cy.signOut();
     });
 
     sharedParametersTests(() => {
@@ -169,7 +181,7 @@ function sharedParametersTests(visitUrl) {
     popover()
       .find('[placeholder="Search by Name or enter an ID"]')
       .type("Aly");
-    popover().contains("Alycia Collins - 541");
+    popover().contains("Alycia McCullough - 2016");
   });
 
   it("should allow searching PEOPLE.NAME by PEOPLE.NAME", () => {
@@ -178,7 +190,7 @@ function sharedParametersTests(visitUrl) {
     popover()
       .find('[placeholder="Search by Name"]')
       .type("Aly");
-    popover().contains("Alycia Collins");
+    popover().contains("Alycia McCullough");
   });
 
   it("should show values for PEOPLE.SOURCE", () => {
@@ -194,7 +206,7 @@ function sharedParametersTests(visitUrl) {
     popover()
       .find('[placeholder="Search by Name or enter an ID"]')
       .type("Aly");
-    popover().contains("Alycia Collins - 541");
+    popover().contains("Alycia McCullough - 2016");
   });
 
   it("should accept url parameters", () => {
@@ -204,7 +216,7 @@ function sharedParametersTests(visitUrl) {
   });
 }
 
-const createQuestion = ({ ORDERS, PEOPLE }) =>
+const createQuestion = () =>
   cy.request("PUT", "/api/card/3", {
     name: "Test Question",
     dataset_query: {
@@ -218,7 +230,7 @@ const createQuestion = ({ ORDERS, PEOPLE }) =>
             name: "id",
             display_name: "Id",
             type: "dimension",
-            dimension: ["field-id", PEOPLE.ID],
+            dimension: ["field", PEOPLE.ID, null],
             "widget-type": "id",
             default: null,
           },
@@ -227,7 +239,7 @@ const createQuestion = ({ ORDERS, PEOPLE }) =>
             name: "name",
             display_name: "Name",
             type: "dimension",
-            dimension: ["field-id", PEOPLE.NAME],
+            dimension: ["field", PEOPLE.NAME, null],
             "widget-type": "category",
             default: null,
           },
@@ -236,7 +248,7 @@ const createQuestion = ({ ORDERS, PEOPLE }) =>
             name: "source",
             display_name: "Source",
             type: "dimension",
-            dimension: ["field-id", PEOPLE.SOURCE],
+            dimension: ["field", PEOPLE.SOURCE, null],
             "widget-type": "category",
             default: null,
           },
@@ -245,7 +257,7 @@ const createQuestion = ({ ORDERS, PEOPLE }) =>
             name: "user_id",
             display_name: "User",
             type: "dimension",
-            dimension: ["field-id", ORDERS.USER_ID],
+            dimension: ["field", ORDERS.USER_ID, null],
             "widget-type": "id",
             default: null,
           },

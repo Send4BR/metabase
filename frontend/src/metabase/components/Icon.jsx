@@ -1,7 +1,6 @@
 /*eslint-disable react/no-danger */
-
 import React, { Component } from "react";
-import RetinaImage from "react-retina-image";
+import PropTypes from "prop-types";
 import styled from "styled-components";
 import { color, space, hover } from "styled-system";
 import cx from "classnames";
@@ -39,20 +38,27 @@ IconWrapper.defaultProps = {
   },
 };
 
+const stringOrNumberPropType = PropTypes.oneOfType([
+  PropTypes.number,
+  PropTypes.string,
+]);
+
+export const iconPropTypes = {
+  name: PropTypes.string.isRequired,
+  size: stringOrNumberPropType,
+  width: stringOrNumberPropType,
+  height: stringOrNumberPropType,
+  scale: stringOrNumberPropType,
+  tooltip: PropTypes.string,
+  defaultName: PropTypes.string,
+  className: PropTypes.string,
+};
+
+const defaultProps = {
+  defaultName: "unknown",
+};
+
 class BaseIcon extends Component {
-  static props: {
-    name: string,
-    size?: string | number,
-    width?: string | number,
-    height?: string | number,
-    scale?: string | number,
-    tooltip?: string, // using Tooltipify
-  };
-
-  static defaultProps = {
-    defaultName: "unknown",
-  };
-
   render() {
     const { name, defaultName, className, ...rest } = this.props;
 
@@ -84,11 +90,17 @@ class BaseIcon extends Component {
     delete props.size, props.scale;
 
     if (icon.img) {
+      // avoid passing `role="img"` to an actual image file
+      // eslint-disable-next-line no-unused-vars
+      const { role, ...rest } = props;
       return (
-        <RetinaImage
-          forceOriginalDimensions={false}
+        <img
           src={icon.img}
-          {...props}
+          srcSet={`
+          ${icon.img}    1x,
+          ${icon.img_2x} 2x
+        `}
+          {...rest}
         />
       );
     } else if (icon.svg) {
@@ -106,10 +118,14 @@ class BaseIcon extends Component {
   }
 }
 
+BaseIcon.propTypes = iconPropTypes;
+BaseIcon.defaultProps = defaultProps;
+
 const Icon = styled(BaseIcon)`
   ${space}
   ${color}
   ${hover}
   flex-shrink: 0
 `;
+
 export default Tooltipify(Icon);

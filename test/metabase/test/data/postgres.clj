@@ -1,9 +1,8 @@
 (ns metabase.test.data.postgres
   "Postgres driver test extensions."
-  (:require [metabase.test.data
-             [interface :as tx]
-             [sql :as sql.tx]
-             [sql-jdbc :as sql-jdbc.tx]]
+  (:require [metabase.test.data.interface :as tx]
+            [metabase.test.data.sql :as sql.tx]
+            [metabase.test.data.sql-jdbc :as sql-jdbc.tx]
             [metabase.test.data.sql-jdbc.load-data :as load-data]
             [metabase.test.data.sql.ddl :as ddl]))
 
@@ -66,9 +65,10 @@
 
 (defmethod ddl/drop-db-ddl-statements :postgres
   [driver {:keys [database-name], :as dbdef} & options]
-  (assert (string? database-name)
-          (format "Expected String database name; got ^%s %s"
-                  (some-> database-name class .getCanonicalName) (pr-str database-name)))
+  (when-not (string? database-name)
+    (throw (ex-info (format "Expected String database name; got ^%s %s"
+                            (some-> database-name class .getCanonicalName) (pr-str database-name))
+                    {:driver driver, :dbdef dbdef})))
   ;; add an additional statement to the front to kill open connections to the DB before dropping
   (cons
    (kill-connections-to-db-sql database-name)
