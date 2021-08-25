@@ -3,14 +3,15 @@ import { t } from "ttag";
 import Select from "metabase/components/Select";
 
 export const component = Select;
+export const category = "input";
 
 export const description = t`
     A component used to make a selection
 `;
 
 import _ from "underscore";
-import { field_special_types } from "metabase/lib/core";
-const EXAMPLE_SECTIONS = _.chain(field_special_types)
+import { field_semantic_types } from "metabase/lib/core";
+const EXAMPLE_SECTIONS = _.chain(field_semantic_types)
   .first(10)
   .groupBy("section")
   .pairs()

@@ -10,7 +10,6 @@ import MetabaseAnalytics from "metabase/lib/analytics";
 import { clearGoogleAuthCredentials } from "metabase/lib/auth";
 
 import { refreshSiteSettings } from "metabase/redux/settings";
-import { refreshCurrentUser } from "metabase/redux/user";
 
 import { SessionApi } from "metabase/services";
 
@@ -23,6 +22,10 @@ export const login = createThunkAction(
     await SessionApi.create(credentials);
 
     MetabaseAnalytics.trackEvent("Auth", "Login");
+
+    // unable to use a top-level `import` here because of a circular dependency
+    const { refreshCurrentUser } = require("metabase/redux/user");
+
     await Promise.all([
       dispatch(refreshCurrentUser()),
       dispatch(refreshSiteSettings()),
@@ -46,6 +49,9 @@ export const loginGoogle = createThunkAction(LOGIN_GOOGLE, function(
 
       MetabaseAnalytics.trackEvent("Auth", "Google Auth Login");
 
+      // unable to use a top-level `import` here because of a circular dependency
+      const { refreshCurrentUser } = require("metabase/redux/user");
+
       await Promise.all([
         dispatch(refreshCurrentUser()),
         dispatch(refreshSiteSettings()),
@@ -53,12 +59,7 @@ export const loginGoogle = createThunkAction(LOGIN_GOOGLE, function(
       dispatch(push(redirectUrl || "/"));
     } catch (error) {
       await clearGoogleAuthCredentials();
-      // If we see a 428 ("Precondition Required") that means we need to show the "No Metabase account exists for this Google Account" page
-      if (error.status === 428) {
-        dispatch(push("/auth/google_no_mb_account"));
-      } else {
-        return error;
-      }
+      return error;
     }
   };
 });

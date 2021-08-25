@@ -1,8 +1,8 @@
-/* @flow weak */
-
 import _ from "underscore";
 import { t, ngettext, msgid } from "ttag";
+import { parseTimestamp } from "metabase/lib/time";
 import MetabaseUtils from "metabase/lib/utils";
+import moment from "moment";
 
 // TODO: dump this from backend settings definitions
 export type SettingName =
@@ -25,11 +25,13 @@ export type SettingName =
   | "ldap-configured?"
   | "map-tile-server-url"
   | "password-complexity"
+  | "search-typeahead-enabled"
   | "setup-token"
   | "site-url"
   | "types"
   | "version"
-  | "version-info";
+  | "version-info"
+  | "version-info-last-checked";
 
 type SettingsMap = { [key: SettingName]: any };
 
@@ -62,7 +64,6 @@ class Settings {
 
   setAll(settings: SettingsMap) {
     for (const [key, value] of Object.entries(settings)) {
-      // $FlowFixMe
       this.set(key, value);
     }
   }
@@ -85,8 +86,11 @@ class Settings {
     return this.get("email-configured?");
   }
 
-  isTrackingEnabled() {
-    return this.get("anon-tracking-enabled") || false;
+  // Right now, all Metabase Cloud hosted instances run on *.metabaseapp.com
+  // We plan on changing this to look at an envvar in the future instead.
+  isHosted() {
+    // matches <custom>.metabaseapp.com and <custom>.metabaseapp.com/
+    return /.+\.metabaseapp.com\/?$/i.test(this.get("site-url"));
   }
 
   googleAuthEnabled() {
@@ -97,21 +101,51 @@ class Settings {
     return this.get("setup-token") != null;
   }
 
-  ssoEnabled() {
-    return this.get("google-auth-client-id") != null;
+  hideEmbedBranding() {
+    return this.get("hide-embed-branding?");
   }
 
   ldapEnabled() {
     return this.get("ldap-configured?");
   }
 
-  hideEmbedBranding() {
-    return this.get("hide-embed-branding?");
+  searchTypeaheadEnabled() {
+    return this.get("search-typeahead-enabled");
+  }
+
+  ssoEnabled() {
+    return this.get("google-auth-client-id") != null;
+  }
+
+  trackingEnabled() {
+    return this.get("anon-tracking-enabled") || false;
+  }
+
+  formattingOptions() {
+    const opts = this.get("custom-formatting");
+    return opts && opts["type/Temporal"] ? opts["type/Temporal"] : {};
+  }
+
+  versionInfoLastChecked() {
+    const ts = this.get("version-info-last-checked");
+    if (ts) {
+      // app DB stores this timestamp in UTC, so convert it to the local zone to render
+      return moment
+        .utc(parseTimestamp(ts))
+        .local()
+        .format("MMMM Do YYYY, h:mm:ss a");
+    } else {
+      return t`never`;
+    }
   }
 
   docsUrl(page = "", anchor = "") {
     let { tag } = this.get("version", {});
-    if (!tag) {
+    if (/^v1\.\d+\.\d+$/.test(tag)) {
+      // if it's a normal EE version, link to the corresponding CE docs
+      tag = tag.replace("v1", "v0");
+    } else if (!tag || /v1/.test(tag) || /SNAPSHOT$/.test(tag)) {
+      // if there's no tag or it's an EE version that might not have a matching CE version, or it's a local build, link to latest
       tag = "latest";
     }
     if (page) {
@@ -121,6 +155,10 @@ class Settings {
       anchor = `#${anchor}`;
     }
     return `https://www.metabase.com/docs/${tag}/${page}${anchor}`;
+  }
+
+  storeUrl(path = "") {
+    return `https://store.metabase.com/${path}`;
   }
 
   newVersionAvailable() {
@@ -168,6 +206,10 @@ class Settings {
     return latest && latest.version;
   }
 
+  isEnterprise() {
+    return false;
+  }
+
   // returns a map that looks like {total: 6, digit: 1}
   passwordComplexityRequirements() {
     return this.get("password-complexity", {});
@@ -182,15 +224,13 @@ class Settings {
 
     const descriptions = {};
     for (const [name, clause] of Object.entries(PASSWORD_COMPLEXITY_CLAUSES)) {
-      // $FlowFixMe:
       if (!clause.test(requirements, password)) {
-        // $FlowFixMe:
         descriptions[name] = clause.description(requirements);
       }
     }
 
     const { total, ...rest } = descriptions;
-    const includes = Object.values(rest).join(t`, `);
+    const includes = Object.values(rest).join(", ");
     if (total && includes) {
       return t`must be ${total} and include ${includes}.`;
     } else if (total) {

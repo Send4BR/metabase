@@ -1,3 +1,4 @@
+/* eslint-disable react/prop-types */
 import React from "react";
 
 import Badge from "metabase/components/Badge";
@@ -16,10 +17,12 @@ class CollectionBadge extends React.Component {
     if (!collection) {
       return null;
     }
+    const icon = collection.getIcon();
     return (
       <Badge
         to={collection.getUrl()}
-        icon={collection.getIcon()}
+        icon={icon.name}
+        iconColor={icon.color}
         data-metabase-event={`${analyticsContext};Collection Badge Click`}
         {...props}
       >

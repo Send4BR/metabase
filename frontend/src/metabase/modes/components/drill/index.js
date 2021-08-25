@@ -1,5 +1,3 @@
-/* @flow */
-
 import SortAction from "./SortAction";
 import ObjectDetailDrill from "./ObjectDetailDrill";
 import QuickFilterDrill from "./QuickFilterDrill";
@@ -9,8 +7,7 @@ import AutomaticDashboardDrill from "./AutomaticDashboardDrill";
 import CompareToRestDrill from "./CompareToRestDrill";
 import ZoomDrill from "./ZoomDrill";
 import FormatAction from "./FormatAction";
-
-import { PLUGIN_DRILLS } from "metabase/plugins";
+import DashboardClickDrill from "./DashboardClickDrill";
 
 export const getDefaultDrills = () => [
   ZoomDrill,
@@ -22,5 +19,5 @@ export const getDefaultDrills = () => [
   AutomaticDashboardDrill,
   CompareToRestDrill,
   FormatAction,
-  ...PLUGIN_DRILLS,
+  DashboardClickDrill,
 ];

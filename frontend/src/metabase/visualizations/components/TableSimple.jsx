@@ -1,8 +1,6 @@
-/* @flow */
-
+/* eslint-disable react/prop-types */
 import React, { Component } from "react";
 import PropTypes from "prop-types";
-import ReactDOM from "react-dom";
 
 import styles from "./Table.css";
 
@@ -16,13 +14,16 @@ import ExternalLink from "metabase/components/ExternalLink";
 import { formatValue } from "metabase/lib/formatting";
 import {
   getTableCellClickedObject,
+  getTableClickedObjectRowData,
   isColumnRightAligned,
 } from "metabase/visualizations/lib/table";
 import { getColumnExtent } from "metabase/visualizations/lib/utils";
+import { HARD_ROW_LIMIT } from "metabase/lib/query";
 
 import { t } from "ttag";
 import cx from "classnames";
 import _ from "underscore";
+import { getIn } from "icepick";
 
 import { isID, isFK } from "metabase/lib/schema_metadata";
 
@@ -36,6 +37,8 @@ type Props = VisualizationProps & {
   className?: string,
   isPivoted: boolean,
   getColumnTitle: number => string,
+  getExtraDataForClick?: Function,
+  limit?: number,
 };
 
 type State = {
@@ -59,6 +62,10 @@ export default class TableSimple extends Component {
       sortColumn: null,
       sortDescending: false,
     };
+
+    this.headerRef = React.createRef();
+    this.footerRef = React.createRef();
+    this.firstRowRef = React.createRef();
   }
 
   static propTypes = {
@@ -78,15 +85,12 @@ export default class TableSimple extends Component {
   }
 
   componentDidUpdate() {
-    const headerHeight = ReactDOM.findDOMNode(
-      this.refs.header,
-    ).getBoundingClientRect().height;
-    const footerHeight = this.refs.footer
-      ? ReactDOM.findDOMNode(this.refs.footer).getBoundingClientRect().height
+    const headerHeight = this.headerRef.current.getBoundingClientRect().height;
+    const footerHeight = this.footerRef.current
+      ? this.footerRef.current.getBoundingClientRect().height
       : 0;
     const rowHeight =
-      ReactDOM.findDOMNode(this.refs.firstRow).getBoundingClientRect().height +
-      1;
+      this.firstRowRef.current.getBoundingClientRect().height + 1;
     const pageSize = Math.max(
       1,
       Math.floor((this.props.height - headerHeight - footerHeight) / rowHeight),
@@ -112,8 +116,11 @@ export default class TableSimple extends Component {
       isPivoted,
       settings,
       getColumnTitle,
+      card,
+      series,
     } = this.props;
     const { rows, cols } = data;
+    const limit = getIn(card, ["dataset_query", "query", "limit"]) || undefined;
     const getCellBackgroundColor = settings["table._cell_background_getter"];
 
     const { page, pageSize, sortColumn, sortDescending } = this.state;
@@ -136,6 +143,13 @@ export default class TableSimple extends Component {
       }
     }
 
+    let paginateMessage;
+    if (limit === undefined && rows.length >= HARD_ROW_LIMIT) {
+      paginateMessage = t`Rows ${start + 1}-${end + 1} of first ${rows.length}`;
+    } else {
+      paginateMessage = t`Rows ${start + 1}-${end + 1} of ${rows.length}`;
+    }
+
     return (
       <div className={cx(this.props.className, "relative flex flex-column")}>
         <div className="flex-full relative">
@@ -151,7 +165,7 @@ export default class TableSimple extends Component {
                 "fullscreen-night-text",
               )}
             >
-              <thead ref="header">
+              <thead ref={this.headerRef}>
                 <tr>
                   {cols.map((col, colIndex) => (
                     <th
@@ -185,16 +199,30 @@ export default class TableSimple extends Component {
               </thead>
               <tbody>
                 {rowIndexes.slice(start, end + 1).map((rowIndex, index) => (
-                  <tr key={rowIndex} ref={index === 0 ? "firstRow" : null}>
+                  <tr
+                    key={rowIndex}
+                    ref={index === 0 ? this.firstRowRef : null}
+                    data-testid="table-row"
+                  >
                     {rows[rowIndex].map((value, columnIndex) => {
+                      const clickedRowData = getTableClickedObjectRowData(
+                        series,
+                        rowIndex,
+                      );
                       const column = cols[columnIndex];
                       const clicked = getTableCellClickedObject(
                         data,
+                        settings,
                         rowIndex,
                         columnIndex,
                         isPivoted,
+                        clickedRowData,
                       );
                       const columnSettings = settings.column(column);
+
+                      const extraData = this.props.getExtraDataForClick
+                        ? this.props.getExtraDataForClick(clicked)
+                        : {};
 
                       const cellData =
                         value == null ? (
@@ -208,14 +236,13 @@ export default class TableSimple extends Component {
                         ) : (
                           formatValue(value, {
                             ...columnSettings,
-                            clicked: clicked,
+                            clicked: { ...clicked, extraData },
                             type: "cell",
                             jsx: true,
                             rich: true,
                           })
                         );
 
-                      // $FlowFixMe: proper test for a React element?
                       const isLink = cellData && cellData.type === ExternalLink;
                       const isClickable =
                         !isLink && this.visualizationIsClickable(clicked);
@@ -253,6 +280,7 @@ export default class TableSimple extends Component {
                                     onVisualizationClick({
                                       ...clicked,
                                       element: e.currentTarget,
+                                      extraData,
                                     });
                                   }
                                 : undefined
@@ -271,12 +299,10 @@ export default class TableSimple extends Component {
         </div>
         {pageSize < rows.length ? (
           <div
-            ref="footer"
+            ref={this.footerRef}
             className="p1 flex flex-no-shrink flex-align-right fullscreen-normal-text fullscreen-night-text"
           >
-            <span className="text-bold">{t`Rows ${start + 1}-${end + 1} of ${
-              rows.length
-            }`}</span>
+            <span className="text-bold">{paginateMessage}</span>
             <span
               className={cx("text-brand-hover px1 cursor-pointer", {
                 disabled: start === 0,

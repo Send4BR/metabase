@@ -1,5 +1,3 @@
-/* @flow weak */
-
 import "core-js/stable";
 import "regenerator-runtime/runtime";
 
@@ -21,6 +19,10 @@ import "metabase/lib/colors";
 
 // NOTE: this loads all builtin plugins
 import "metabase/plugins/builtin";
+
+// This is conditionally aliased in the webpack config.
+// If EE isn't enabled, it loads an empty file.
+import "ee-plugins"; // eslint-disable-line import/no-unresolved
 
 import { PLUGIN_APP_INIT_FUCTIONS } from "metabase/plugins";
 
@@ -57,6 +59,7 @@ const BASENAME = window.MetabaseRoot.replace(/\/+$/, "");
 
 api.basename = BASENAME;
 
+// eslint-disable-next-line react-hooks/rules-of-hooks
 const browserHistory = useRouterHistory(createHistory)({
   basename: BASENAME,
 });
@@ -99,7 +102,7 @@ function _init(reducers, getRoutes, callback) {
   MetabaseSettings.on("anon-tracking-enabled", () => {
     window[
       "ga-disable-" + MetabaseSettings.get("ga-code")
-    ] = MetabaseSettings.isTrackingEnabled() ? null : true;
+    ] = MetabaseSettings.trackingEnabled() ? null : true;
   });
 
   MetabaseSettings.on("user-locale", async locale => {

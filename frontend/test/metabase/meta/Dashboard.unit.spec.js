@@ -44,7 +44,7 @@ describe("getParameterMappingOptions", () => {
           sectionName: "Review",
           icon: "calendar",
           name: "Created At",
-          target: ["dimension", ["field-id", REVIEWS.CREATED_AT.id]],
+          target: ["dimension", ["field", REVIEWS.CREATED_AT.id, null]],
           isForeign: false,
         },
         {
@@ -54,9 +54,9 @@ describe("getParameterMappingOptions", () => {
           target: [
             "dimension",
             [
-              "fk->",
-              ["field-id", REVIEWS.PRODUCT_ID.id],
-              ["field-id", PRODUCTS.CREATED_AT.id],
+              "field",
+              PRODUCTS.CREATED_AT.id,
+              { "source-field": REVIEWS.PRODUCT_ID.id },
             ],
           ],
           isForeign: true,
@@ -82,24 +82,21 @@ describe("getParameterMappingOptions", () => {
           sectionName: "Review",
           name: "Created At",
           icon: "calendar",
-          target: ["dimension", ["field-id", 30]],
+          target: ["dimension", ["field", 30, null]],
           isForeign: false,
         },
         {
           sectionName: "Joined Table",
           name: "Created At",
           icon: "calendar",
-          target: [
-            "dimension",
-            ["joined-field", "Joined Table", ["field-id", 1]],
-          ],
+          target: ["dimension", ["field", 1, { "join-alias": "Joined Table" }]],
           isForeign: true,
         },
         {
           sectionName: "Product",
           name: "Created At",
           icon: "calendar",
-          target: ["dimension", ["fk->", ["field-id", 32], ["field-id", 22]]],
+          target: ["dimension", ["field", 22, { "source-field": 32 }]],
           isForeign: true,
         },
       ]);
@@ -116,12 +113,12 @@ describe("getParameterMappingOptions", () => {
       );
       expect(options).toEqual([
         {
-          sectionName: undefined,
+          sectionName: null,
           name: "Created At",
           icon: "calendar",
           target: [
             "dimension",
-            ["field-literal", "CREATED_AT", "type/DateTime"],
+            ["field", "CREATED_AT", { "base-type": "type/DateTime" }],
           ],
           isForeign: false,
         },
@@ -146,10 +143,10 @@ describe("getParameterMappingOptions", () => {
       );
       expect(options).toEqual([
         {
-          sectionName: "Variables",
           name: "created",
           icon: "calendar",
           target: ["variable", ["template-tag", "created"]],
+          isForeign: false,
         },
       ]);
     });
@@ -164,14 +161,13 @@ describe("getParameterMappingOptions", () => {
           created: {
             type: "dimension",
             name: "created",
-            dimension: ["field-id", ORDERS.CREATED_AT.id],
+            dimension: ["field", ORDERS.CREATED_AT.id, null],
           },
         },
       }),
     );
     expect(options).toEqual([
       {
-        sectionName: "Order",
         name: "Created At",
         icon: "calendar",
         target: ["dimension", ["template-tag", "created"]],

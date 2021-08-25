@@ -181,31 +181,6 @@ describe("StructuredQuery", () => {
       });
     });
 
-    describe("aggregationOperators", () => {
-      // TODO Atte Keinänen 6/14/17: Add the mock metadata for aggregation options
-      // (currently the fixture doesn't include them)
-      it("should return a non-empty list of options", () => {
-        pending();
-        expect(query.aggregationOperators().length).toBeGreaterThan(0);
-      });
-      it("should contain the count aggregation", () => {
-        pending();
-      });
-    });
-    describe("aggregationOperatorsWithoutRaw", () => {
-      // Also waiting for the mock metadata
-      pending();
-    });
-
-    describe("aggregationFieldOptions()", () => {
-      it("includes expressions to the results without a field filter", () => {
-        pending();
-      });
-      it("includes expressions to the results with a field filter", () => {
-        pending();
-      });
-    });
-
     describe("canRemoveAggregation", () => {
       it("returns false if there are no aggregations", () => {
         expect(query.canRemoveAggregation()).toBe(false);
@@ -217,7 +192,7 @@ describe("StructuredQuery", () => {
         expect(
           query
             .aggregate(["count"])
-            .aggregate(["sum", ["field-id", ORDERS.TOTAL.id]])
+            .aggregate(["sum", ["field", ORDERS.TOTAL.id, null]])
             .canRemoveAggregation(),
         ).toBe(true);
       });
@@ -249,7 +224,7 @@ describe("StructuredQuery", () => {
       });
       it("returns a standard aggregation name with field", () => {
         expect(
-          makeQueryWithAggregation(["sum", ["field-id", ORDERS.TOTAL.id]])
+          makeQueryWithAggregation(["sum", ["field", ORDERS.TOTAL.id, null]])
             .aggregations()[0]
             .displayName(),
         ).toBe("Sum of Total");
@@ -258,7 +233,11 @@ describe("StructuredQuery", () => {
         expect(
           makeQueryWithAggregation([
             "sum",
-            ["fk->", ORDERS.PRODUCT_ID.id, PRODUCTS.TITLE.id],
+            [
+              "field",
+              PRODUCTS.TITLE.id,
+              { "source-field": ORDERS.PRODUCT_ID.id },
+            ],
           ])
             .aggregations()[0]
             .displayName(),
@@ -269,7 +248,7 @@ describe("StructuredQuery", () => {
           makeQueryWithAggregation([
             "+",
             1,
-            ["sum", ["field-id", ORDERS.TOTAL.id]],
+            ["sum", ["field", ORDERS.TOTAL.id, null]],
           ])
             .aggregations()[0]
             .displayName(),
@@ -279,7 +258,7 @@ describe("StructuredQuery", () => {
         expect(
           makeQueryWithAggregation([
             "aggregation-options",
-            ["sum", ["field-id", ORDERS.TOTAL.id]],
+            ["sum", ["field", ORDERS.TOTAL.id, null]],
             { "display-name": "Named" },
           ])
             .aggregations()[0]
@@ -296,44 +275,21 @@ describe("StructuredQuery", () => {
         });
       });
     });
-
-    describe("removeAggregation", () => {
-      it("removes the correct aggregation", () => {
-        pending();
-      });
-      it("removes all breakouts when removing the last aggregation", () => {
-        pending();
-      });
-    });
-
-    describe("updateAggregation", () => {
-      it("updates the correct aggregation", () => {
-        pending();
-      });
-      it('removes all breakouts and aggregations when setting an aggregation to "rows"', () => {
-        pending();
-      });
-    });
-
-    describe("clearAggregations", () => {
-      it("clears all aggreagtions and breakouts", () => {
-        pending();
-      });
-    });
   });
 
   // BREAKOUTS:
   describe("BREAKOUT METHODS", () => {
-    describe("breakouts", () => {
-      pending();
-    });
     describe("breakoutOptions", () => {
       it("returns the correct count of dimensions", () => {
         expect(query.breakoutOptions().all().length).toBe(28);
       });
 
       it("excludes the already used breakouts", () => {
-        const queryWithBreakout = query.breakout(["field-id", ORDERS.TOTAL.id]);
+        const queryWithBreakout = query.breakout([
+          "field",
+          ORDERS.TOTAL.id,
+          null,
+        ]);
         expect(queryWithBreakout.breakoutOptions().all().length).toBe(27);
       });
 
@@ -345,16 +301,13 @@ describe("StructuredQuery", () => {
       });
 
       it("includes an explicitly provided breakout although it has already been used", () => {
-        const breakout = ["field-id", ORDERS.TOTAL.id];
+        const breakout = ["field", ORDERS.TOTAL.id, null];
         const queryWithBreakout = query.breakout(breakout);
         expect(queryWithBreakout.breakoutOptions().all().length).toBe(27);
         expect(queryWithBreakout.breakoutOptions(breakout).all().length).toBe(
           28,
         );
       });
-    });
-    describe("canAddBreakout", () => {
-      pending();
     });
     describe("hasValidBreakout", () => {
       it("should return false if there are no breakouts", () => {
@@ -364,37 +317,10 @@ describe("StructuredQuery", () => {
         expect(query.breakout(ORDERS.PRODUCT_ID).hasValidBreakout()).toBe(true);
       });
     });
-
-    describe("addBreakout", () => {
-      pending();
-    });
-
-    describe("removeBreakout", () => {
-      pending();
-    });
-
-    describe("updateBreakout", () => {
-      pending();
-    });
-
-    describe("clearBreakouts", () => {
-      pending();
-    });
   });
 
   // FILTERS:
   describe("FILTER METHODS", () => {
-    describe("filters", () => {
-      pending();
-    });
-
-    describe("filterDimensionOptions", () => {
-      pending();
-    });
-    describe("filterSegmentOptions", () => {
-      pending();
-    });
-
     describe("segments", () => {
       it("should list any applied segments that are currently active filters", () => {
         const queryWithSegmentFilter = query.filter(["segment", 1]);
@@ -402,31 +328,6 @@ describe("StructuredQuery", () => {
         expect(queryWithSegmentFilter.segments().length).toBe(1);
         // and they should actually be segments
         expect(queryWithSegmentFilter.segments()[0]).toBeInstanceOf(Segment);
-      });
-    });
-
-    describe("canAddFilter", () => {
-      pending();
-    });
-
-    describe("addFilter", () => {
-      it("adds an filter", () => {
-        pending();
-      });
-    });
-    describe("removeFilter", () => {
-      it("removes the correct filter", () => {
-        pending();
-      });
-    });
-    describe("updateFilter", () => {
-      it("updates the correct filter", () => {
-        pending();
-      });
-    });
-    describe("clearFilters", () => {
-      it("clears all filters", () => {
-        pending();
       });
     });
   });
@@ -439,9 +340,9 @@ describe("StructuredQuery", () => {
       it("return an array with the sort clause", () => {
         expect(
           makeQuery({
-            "order-by": [["asc", ["field-id", ORDERS.TOTAL.id]]],
+            "order-by": [["asc", ["field", ORDERS.TOTAL.id, null]]],
           }).sorts(),
-        ).toEqual([["asc", ["field-id", ORDERS.TOTAL.id]]]);
+        ).toEqual([["asc", ["field", ORDERS.TOTAL.id, null]]]);
       });
     });
 
@@ -453,90 +354,16 @@ describe("StructuredQuery", () => {
       it("excludes the already used sorts", () => {
         const queryWithBreakout = query.sort([
           "asc",
-          ["field-id", ORDERS.TOTAL.id],
+          ["field", ORDERS.TOTAL.id, null],
         ]);
         expect(queryWithBreakout.sortOptions().dimensions.length).toBe(6);
       });
 
       it("includes an explicitly provided sort although it has already been used", () => {
-        const sort = ["asc", ["field-id", ORDERS.TOTAL.id]];
+        const sort = ["asc", ["field", ORDERS.TOTAL.id, null]];
         const queryWithBreakout = query.sort(sort);
         expect(queryWithBreakout.sortOptions().dimensions.length).toBe(6);
         expect(queryWithBreakout.sortOptions(sort).dimensions.length).toBe(7);
-      });
-    });
-
-    describe("canAddSort", () => {
-      pending();
-    });
-
-    describe("addSort", () => {
-      it("adds a sort", () => {
-        pending();
-      });
-    });
-    describe("updateSort", () => {
-      it("", () => {
-        pending();
-      });
-    });
-    describe("removeSort", () => {
-      it("removes the correct sort", () => {
-        pending();
-      });
-    });
-    describe("clearSort", () => {
-      it("clears all sorts", () => {
-        pending();
-      });
-    });
-    describe("replaceSort", () => {
-      it("replaces sorts with a new sort", () => {
-        pending();
-      });
-    });
-  });
-  // LIMIT
-
-  describe("LIMIT METHODS", () => {
-    describe("limit", () => {
-      it("returns null if there is no limit", () => {
-        pending();
-      });
-      it("returns the limit if one has been set", () => {
-        pending();
-      });
-    });
-
-    describe("updateLimit", () => {
-      it("updates the limit", () => {
-        pending();
-      });
-    });
-    describe("clearLimit", () => {
-      it("clears the limit", () => {
-        pending();
-      });
-    });
-  });
-
-  describe("EXPRESSION METHODS", () => {
-    describe("expressions", () => {
-      it("returns an empty map", () => {
-        pending();
-      });
-      it("returns a map with the expressions", () => {
-        pending();
-      });
-    });
-    describe("updateExpression", () => {
-      it("updates the correct expression", () => {
-        pending();
-      });
-    });
-    describe("removeExpression", () => {
-      it("removes the correct expression", () => {
-        pending();
       });
     });
   });
@@ -562,35 +389,17 @@ describe("StructuredQuery", () => {
         expect(query.fieldOptions().count).toBe(28);
       });
     });
-    describe("dimensions", () => {
-      pending();
-    });
-    describe("tableDimensions", () => {
-      pending();
-    });
-    describe("expressionDimensions", () => {
-      pending();
-    });
-    describe("breakoutDimensions", () => {
-      pending();
-    });
-    describe("aggregationDimensions", () => {
-      pending();
-    });
   });
 
   describe("FIELD REFERENCE METHODS", () => {
     describe("fieldReferenceForColumn", () => {
-      xit('should return `["field-id", 1]` for a normal column', () => {
+      xit('should return `["field", 1, null]` for a normal column', () => {
         expect(query.fieldReferenceForColumn({ id: ORDERS.TOTAL.id })).toEqual([
-          "field-id",
+          "field",
           ORDERS.TOTAL.id,
+          null,
         ]);
       });
-    });
-
-    describe("parseFieldReference", () => {
-      pending();
     });
   });
 

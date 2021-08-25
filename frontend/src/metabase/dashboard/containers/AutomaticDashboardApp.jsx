@@ -1,5 +1,4 @@
-/* @flow weak */
-
+/* eslint-disable react/prop-types */
 import React from "react";
 import { Box, Flex } from "grid-styled";
 import { t } from "ttag";
@@ -19,7 +18,7 @@ import Link from "metabase/components/Link";
 import Tooltip from "metabase/components/Tooltip";
 
 import { Dashboard } from "metabase/dashboard/containers/Dashboard";
-import Parameters from "metabase/parameters/components/Parameters";
+import Parameters from "metabase/parameters/components/Parameters/Parameters";
 
 import { getMetadata } from "metabase/selectors/metadata";
 
@@ -72,10 +71,7 @@ class AutomaticDashboardApp extends React.Component {
     triggerToast(
       <div className="flex align-center">
         {t`Your dashboard was saved`}
-        <Link
-          className="link text-bold ml1"
-          to={Urls.dashboard(newDashboard.id)}
-        >
+        <Link className="link text-bold ml1" to={Urls.dashboard(newDashboard)}>
           {t`See it`}
         </Link>
       </div>,
@@ -86,7 +82,7 @@ class AutomaticDashboardApp extends React.Component {
     MetabaseAnalytics.trackEvent("AutoDashboard", "Save");
   };
 
-  componentWillReceiveProps(nextProps) {
+  UNSAFE_componentWillReceiveProps(nextProps) {
     // clear savedDashboardId if changing to a different dashboard
     if (this.props.location.pathname !== nextProps.location.pathname) {
       this.setState({ savedDashboardId: null });
@@ -241,9 +237,9 @@ const SuggestionsList = ({ suggestions, section }) => (
   <Box is="ol" my={1}>
     {Object.keys(suggestions).map((s, i) => (
       <li key={i} className="my2">
-        <SuggetsionSectionHeading>
+        <SuggestionSectionHeading>
           {RELATED_CONTENT[s].title}
-        </SuggetsionSectionHeading>
+        </SuggestionSectionHeading>
         {suggestions[s].length > 0 &&
           suggestions[s].map((item, itemIndex) => (
             <Link
@@ -277,7 +273,7 @@ const SuggestionsList = ({ suggestions, section }) => (
   </Box>
 );
 
-const SuggetsionSectionHeading = ({ children }) => (
+const SuggestionSectionHeading = ({ children }) => (
   <h5
     style={{
       fontWeight: 900,

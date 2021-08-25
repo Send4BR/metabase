@@ -1,5 +1,9 @@
 /* provide flex utilities in lieu of float based layouts */
 
+:root {
+  --gap-1: 0.5rem;
+}
+
 .flex,
 :local(.flex) {
   display: flex;
@@ -65,6 +69,7 @@
      * fixed-size element). To change this, set the min-width or min-height property.
      */
   min-width: 0;
+  min-height: 0;
 }
 
 .align-center,
@@ -80,6 +85,10 @@
 .justify-center,
 :local(.justify-center) {
   justify-content: center;
+}
+
+.justify-evenly {
+  justify-content: space-evenly;
 }
 
 .justify-between {
@@ -248,4 +257,9 @@
 */
 .ie-wrap-content-fix {
   max-width: 100%;
+}
+
+.row-gap-1,
+:local(.row-gap-1) {
+  row-gap: var(--gap-1);
 }

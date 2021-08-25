@@ -1,7 +1,5 @@
-/* @flow */
-
+/* eslint-disable react/prop-types */
 import React, { Component } from "react";
-import ReactDOM from "react-dom";
 import styles from "./PieChart.css";
 import { t } from "ttag";
 import ChartTooltip from "../components/ChartTooltip";
@@ -20,7 +18,6 @@ import {
   dimensionSetting,
 } from "metabase/visualizations/lib/settings/utils";
 import { columnSettings } from "metabase/visualizations/lib/settings/column";
-import { PLUGIN_CHART_SETTINGS } from "metabase/plugins";
 
 import { formatValue } from "metabase/lib/formatting";
 
@@ -45,7 +42,12 @@ const PERCENT_REGEX = /percent/i;
 import type { VisualizationProps } from "metabase-types/types/Visualization";
 
 export default class PieChart extends Component {
-  props: VisualizationProps;
+  constructor(props: VisualizationProps) {
+    super(props);
+
+    this.chartDetail = React.createRef();
+    this.chartGroup = React.createRef();
+  }
 
   static uiName = t`Pie`;
   static identifier = "pie";
@@ -193,17 +195,18 @@ export default class PieChart extends Component {
       },
       readDependencies: ["pie._dimensionIndex"],
     },
-    ...PLUGIN_CHART_SETTINGS,
   };
 
   componentDidUpdate() {
-    const groupElement = ReactDOM.findDOMNode(this.refs.group);
-    const detailElement = ReactDOM.findDOMNode(this.refs.detail);
-    if (groupElement.getBoundingClientRect().width < 120) {
-      detailElement.classList.add("hide");
-    } else {
-      detailElement.classList.remove("hide");
-    }
+    requestAnimationFrame(() => {
+      const groupElement = this.chartGroup.current;
+      const detailElement = this.chartDetail.current;
+      if (groupElement.getBoundingClientRect().width < 120) {
+        detailElement.classList.add("hide");
+      } else {
+        detailElement.classList.remove("hide");
+      }
+    });
   }
 
   render() {
@@ -258,6 +261,7 @@ export default class PieChart extends Component {
         value: row[metricIndex],
         displayValue: row[metricIndex],
         percentage: row[metricIndex] / total,
+        rowIndex: index,
         color: settings["pie._colors"][row[dimensionIndex]],
       }))
       .partition(d => d.percentage > sliceThreshold)
@@ -269,7 +273,7 @@ export default class PieChart extends Component {
       others.length === 1
         ? others[0]
         : {
-            key: "Other",
+            key: t`Other`,
             value: otherTotal,
             percentage: otherTotal / total,
             color: color("text-light"),
@@ -289,6 +293,7 @@ export default class PieChart extends Component {
     const formatPercent = percent =>
       formatValue(percent, {
         column: cols[metricIndex],
+        number_separators: settings.column(cols[metricIndex]).number_separators,
         jsx: true,
         majorWidth: 0,
         number_style: "percent",
@@ -353,7 +358,7 @@ export default class PieChart extends Component {
             showPercentInTooltip && slice.percentage != null
               ? [
                   {
-                    key: "Percentage",
+                    key: t`Percentage`,
                     value: formatPercent(slice.percentage),
                   },
                 ]
@@ -376,17 +381,29 @@ export default class PieChart extends Component {
       value = formatMetric(total);
     }
 
-    const getSliceClickObject = index => ({
-      value: slices[index].value,
-      column: cols[metricIndex],
-      dimensions: [
-        {
-          value: slices[index].key,
-          column: cols[dimensionIndex],
-        },
-      ],
-      settings,
-    });
+    const getSliceClickObject = index => {
+      const slice = slices[index];
+      const sliceRows = slice.rowIndex != null && rows[slice.rowIndex];
+      const data =
+        sliceRows &&
+        sliceRows.map((value, index) => ({
+          value,
+          col: cols[index],
+        }));
+
+      return {
+        value: slice.value,
+        column: cols[metricIndex],
+        data: data,
+        dimensions: [
+          {
+            value: slice.key,
+            column: cols[dimensionIndex],
+          },
+        ],
+        settings,
+      };
+    };
 
     const isClickable =
       onVisualizationClick && visualizationIsClickable(getSliceClickObject(0));
@@ -408,8 +425,9 @@ export default class PieChart extends Component {
         isDashboard={this.props.isDashboard}
       >
         <div className={styles.ChartAndDetail}>
-          <div ref="detail" className={styles.Detail}>
+          <div ref={this.chartDetail} className={styles.Detail}>
             <div
+              data-testid="detail-value"
               className={cx(
                 styles.Value,
                 "fullscreen-normal-text fullscreen-night-text",
@@ -421,13 +439,15 @@ export default class PieChart extends Component {
           </div>
           <div className={cx(styles.Chart, "layout-centered")}>
             <svg
+              data-testid="pie-chart"
               className={cx(styles.Donut, "m1")}
               viewBox="0 0 100 100"
               style={{ maxWidth: MAX_PIE_SIZE, maxHeight: MAX_PIE_SIZE }}
             >
-              <g ref="group" transform={`translate(50,50)`}>
+              <g ref={this.chartGroup} transform={`translate(50,50)`}>
                 {pie(slices).map((slice, index) => (
                   <path
+                    data-testid="slice"
                     key={index}
                     d={arc(slice)}
                     fill={slices[index].color}

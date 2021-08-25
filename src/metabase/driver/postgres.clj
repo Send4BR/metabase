@@ -1,32 +1,27 @@
 (ns metabase.driver.postgres
   "Database driver for PostgreSQL databases. Builds on top of the SQL JDBC driver, which implements most functionality
   for JDBC-based drivers."
-  (:require [clojure
-             [set :as set]
-             [string :as str]]
-            [clojure.java.jdbc :as jdbc]
+  (:require [clojure.java.jdbc :as jdbc]
+            [clojure.set :as set]
+            [clojure.string :as str]
             [clojure.tools.logging :as log]
-            [honeysql
-             [core :as hsql]
-             [format :as hformat]]
+            [honeysql.core :as hsql]
+            [honeysql.format :as hformat]
             [java-time :as t]
-            [metabase
-             [driver :as driver]
-             [models :refer [Field]]
-             [util :as u]]
             [metabase.db.spec :as db.spec]
+            [metabase.driver :as driver]
             [metabase.driver.common :as driver.common]
-            [metabase.driver.sql-jdbc
-             [common :as sql-jdbc.common]
-             [connection :as sql-jdbc.conn]
-             [execute :as sql-jdbc.execute]
-             [sync :as sql-jdbc.sync]]
+            [metabase.driver.sql-jdbc.common :as sql-jdbc.common]
+            [metabase.driver.sql-jdbc.connection :as sql-jdbc.conn]
+            [metabase.driver.sql-jdbc.execute :as sql-jdbc.execute]
+            [metabase.driver.sql-jdbc.sync :as sql-jdbc.sync]
             [metabase.driver.sql.query-processor :as sql.qp]
             [metabase.driver.sql.util.unprepare :as unprepare]
-            [metabase.util
-             [date-2 :as u.date]
-             [honeysql-extensions :as hx]
-             [ssh :as ssh]]
+            [metabase.models :refer [Field]]
+            [metabase.util :as u]
+            [metabase.util.date-2 :as u.date]
+            [metabase.util.honeysql-extensions :as hx]
+            [metabase.util.ssh :as ssh]
             [pretty.core :refer [PrettyPrintable]])
   (:import [java.sql ResultSet ResultSetMetaData Time Types]
            [java.time LocalDateTime OffsetDateTime OffsetTime]
@@ -92,16 +87,20 @@
      driver.common/default-password-details
      driver.common/default-ssl-details
      (assoc driver.common/default-additional-options-details
-       :placeholder "prepareThreshold=0")]))
+            :placeholder "prepareThreshold=0")]))
 
-(defn- enum-types [driver database]
+(defmethod driver/db-start-of-week :postgres
+  [_]
+  :monday)
+
+(defn- enum-types [_driver database]
   (set
-   (map (comp keyword :typname)
-        (jdbc/query (sql-jdbc.conn/connection-details->spec driver (:details database))
-                    [(str "SELECT DISTINCT t.typname "
-                          "FROM pg_enum e "
-                          "LEFT JOIN pg_type t "
-                          "  ON t.oid = e.enumtypid")]))))
+    (map (comp keyword :typname)
+         (jdbc/query (sql-jdbc.conn/db->pooled-connection-spec database)
+                     [(str "SELECT DISTINCT t.typname "
+                           "FROM pg_enum e "
+                           "LEFT JOIN pg_type t "
+                           "  ON t.oid = e.enumtypid")]))))
 
 (def ^:private ^:dynamic *enum-types* nil)
 
@@ -122,34 +121,41 @@
   [_ _ expr]
   (hsql/call :to_timestamp expr))
 
+(defmethod sql.qp/cast-temporal-string [:postgres :Coercion/YYYYMMDDHHMMSSString->Temporal]
+  [_driver _coercion-strategy expr]
+  (hsql/call :to_timestamp expr (hx/literal "YYYYMMDDHH24MISS")))
+
+(defmethod sql.qp/cast-temporal-byte [:postgres :Coercion/YYYYMMDDHHMMSSBytes->Temporal]
+  [driver _coercion-strategy expr]
+  (sql.qp/cast-temporal-string driver :Coercion/YYYYMMDDHHMMSSString->Temporal
+                               (hsql/call :convert_from expr (hx/literal "UTF8"))))
+
 (defn- date-trunc [unit expr] (hsql/call :date_trunc (hx/literal unit) (hx/->timestamp expr)))
 (defn- extract    [unit expr] (hsql/call :extract    unit              (hx/->timestamp expr)))
 
 (def ^:private extract-integer (comp hx/->integer extract))
 
-(def ^:private one-day (hsql/raw "INTERVAL '1 day'"))
-
-(defmethod sql.qp/date [:postgres :default]        [_ _ expr] expr)
-(defmethod sql.qp/date [:postgres :minute]         [_ _ expr] (date-trunc :minute expr))
-(defmethod sql.qp/date [:postgres :minute-of-hour] [_ _ expr] (extract-integer :minute expr))
-(defmethod sql.qp/date [:postgres :hour]           [_ _ expr] (date-trunc :hour expr))
-(defmethod sql.qp/date [:postgres :hour-of-day]    [_ _ expr] (extract-integer :hour expr))
-(defmethod sql.qp/date [:postgres :day]            [_ _ expr] (hx/->date expr))
-;; Postgres DOW is 0 (Sun) - 6 (Sat); increment this to be consistent with Java, H2, MySQL, and Mongo (1-7)
-(defmethod sql.qp/date [:postgres :day-of-week]     [_ _ expr] (hx/inc (extract-integer :dow expr)))
+(defmethod sql.qp/date [:postgres :default]         [_ _ expr] expr)
+(defmethod sql.qp/date [:postgres :minute]          [_ _ expr] (date-trunc :minute expr))
+(defmethod sql.qp/date [:postgres :minute-of-hour]  [_ _ expr] (extract-integer :minute expr))
+(defmethod sql.qp/date [:postgres :hour]            [_ _ expr] (date-trunc :hour expr))
+(defmethod sql.qp/date [:postgres :hour-of-day]     [_ _ expr] (extract-integer :hour expr))
+(defmethod sql.qp/date [:postgres :day]             [_ _ expr] (hx/->date expr))
 (defmethod sql.qp/date [:postgres :day-of-month]    [_ _ expr] (extract-integer :day expr))
 (defmethod sql.qp/date [:postgres :day-of-year]     [_ _ expr] (extract-integer :doy expr))
-;; Postgres weeks start on Monday, so shift this date into the proper bucket and then decrement the resulting day
-(defmethod sql.qp/date [:postgres :week]            [_ _ expr] (hx/- (date-trunc :week (hx/+ (hx/->timestamp expr)
-                                                                                             one-day))
-                                                                     one-day))
-(defmethod sql.qp/date [:postgres :week-of-year]    [_ _ expr] (extract-integer :week (hx/+ (hx/->timestamp expr)
-                                                                                            one-day)))
 (defmethod sql.qp/date [:postgres :month]           [_ _ expr] (date-trunc :month expr))
 (defmethod sql.qp/date [:postgres :month-of-year]   [_ _ expr] (extract-integer :month expr))
 (defmethod sql.qp/date [:postgres :quarter]         [_ _ expr] (date-trunc :quarter expr))
 (defmethod sql.qp/date [:postgres :quarter-of-year] [_ _ expr] (extract-integer :quarter expr))
 (defmethod sql.qp/date [:postgres :year]            [_ _ expr] (date-trunc :year expr))
+
+(defmethod sql.qp/date [:postgres :day-of-week]
+  [_ _ expr]
+  (sql.qp/adjust-day-of-week :postgres (extract-integer :dow expr)))
+
+(defmethod sql.qp/date [:postgres :week]
+  [_ _ expr]
+  (sql.qp/adjust-start-of-week :postgres (partial date-trunc :week) expr))
 
 (defmethod sql.qp/->honeysql [:postgres :value]
   [driver value]
@@ -167,7 +173,11 @@
 
 (defmethod sql.qp/->honeysql [:postgres :regex-match-first]
   [driver [_ arg pattern]]
-  (hsql/call :substring (hsql/raw (str (hformat/to-sql (sql.qp/->honeysql driver arg)) " FROM '" pattern "'"))))
+  (let [col-name (hformat/to-sql (sql.qp/->honeysql driver arg))]
+    (reify
+      hformat/ToSql
+      (to-sql [_]
+        (str "substring(" col-name " FROM " (hformat/to-sql pattern) ")")))))
 
 (defmethod sql.qp/->honeysql [:postgres Time]
   [_ time-value]
@@ -220,7 +230,7 @@
    :box           :type/*
    :bpchar        :type/Text ; "blank-padded char" is the internal name of "character"
    :bytea         :type/*    ; byte array
-   :cidr          :type/Text ; IPv4/IPv6 network address
+   :cidr          :type/Structured ; IPv4/IPv6 network address
    :circle        :type/*
    :citext        :type/Text ; case-insensitive text
    :date          :type/Date
@@ -234,11 +244,11 @@
    :int4          :type/Integer
    :int8          :type/BigInteger
    :interval      :type/*               ; time span
-   :json          :type/Text
-   :jsonb         :type/Text
+   :json          :type/Structured
+   :jsonb         :type/Structured
    :line          :type/*
    :lseg          :type/*
-   :macaddr       :type/Text
+   :macaddr       :type/Structured
    :money         :type/Decimal
    :numeric       :type/Decimal
    :path          :type/*
@@ -262,7 +272,7 @@
    :uuid          :type/UUID
    :varbit        :type/*
    :varchar       :type/Text
-   :xml           :type/Text
+   :xml           :type/Structured
    (keyword "bit varying")                :type/*
    (keyword "character varying")          :type/Text
    (keyword "double precision")           :type/Float
@@ -277,19 +287,20 @@
     :type/PostgresEnum
     (default-base-types column)))
 
-(defmethod sql-jdbc.sync/column->special-type :postgres
+(defmethod sql-jdbc.sync/column->semantic-type :postgres
   [_ database-type _]
-  ;; this is really, really simple right now.  if its postgres :json type then it's :type/SerializedJSON special-type
+  ;; this is really, really simple right now.  if its postgres :json type then it's :type/SerializedJSON semantic-type
   (case database-type
-    "json" :type/SerializedJSON
-    "inet" :type/IPAddress
+    "json"  :type/SerializedJSON
+    "jsonb" :type/SerializedJSON
+    "xml"   :type/XML
+    "inet"  :type/IPAddress
     nil))
 
 (def ^:private ssl-params
   "Params to include in the JDBC connection spec for an SSL connection."
   {:ssl        true
-   :sslmode    "require"
-   :sslfactory "org.postgresql.ssl.NonValidatingFactory"})
+   :sslmode    "require"})
 
 (def ^:private disable-ssl-params
   "Params to include in the JDBC connection spec to disable SSL."
@@ -297,19 +308,24 @@
 
 (defmethod sql-jdbc.conn/connection-details->spec :postgres
   [_ {ssl? :ssl, :as details-map}]
-  (-> details-map
-      (update :port (fn [port]
-                      (if (string? port)
-                        (Integer/parseInt port)
-                        port)))
-      ;; remove :ssl in case it's false; DB will still try (& fail) to connect if the key is there
-      (dissoc :ssl)
-      (merge (if ssl?
-               ssl-params
-               disable-ssl-params))
-      (set/rename-keys {:dbname :db})
-      db.spec/postgres
-      (sql-jdbc.common/handle-additional-options details-map)))
+  (let [props (-> details-map
+                  (update :port (fn [port]
+                                  (if (string? port)
+                                    (Integer/parseInt port)
+                                    port)))
+                  ;; remove :ssl in case it's false; DB will still try (& fail) to connect if the key is there
+                  (dissoc :ssl))
+        ;; this happens via ->> so that the users props will override the ssl-params stuff.
+        ;; if the user has specified a sslmode, it must always take precedence over our default.
+        props (->> props
+                   (merge (if ssl?
+                            ssl-params
+                            disable-ssl-params)))
+        props (-> props
+                  (set/rename-keys {:dbname :db})
+                  db.spec/postgres
+                  (sql-jdbc.common/handle-additional-options details-map))]
+    props))
 
 (defmethod sql-jdbc.execute/set-timezone-sql :postgres
   [_]

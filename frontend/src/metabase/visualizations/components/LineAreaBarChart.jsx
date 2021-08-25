@@ -1,11 +1,13 @@
-/* @flow */
-
+/* eslint-disable react/prop-types */
 import React, { Component } from "react";
 import PropTypes from "prop-types";
 import { t } from "ttag";
+
+import { iconPropTypes } from "metabase/components/Icon";
+
 import CardRenderer from "./CardRenderer";
 import LegendHeader from "./LegendHeader";
-import { TitleLegendHeader } from "./TitleLegendHeader";
+import TitleLegendHeader from "./TitleLegendHeader";
 
 import "./LineAreaBarChart.css";
 
@@ -194,6 +196,7 @@ export default class LineAreaBarChart extends Component {
     actionButtons: PropTypes.node,
     showTitle: PropTypes.bool,
     isDashboard: PropTypes.bool,
+    headerIcon: PropTypes.shape(iconPropTypes),
   };
 
   static defaultProps = {};
@@ -261,6 +264,7 @@ export default class LineAreaBarChart extends Component {
       series,
       hovered,
       showTitle,
+      headerIcon,
       actionButtons,
       onChangeCardAndRun,
       onVisualizationClick,
@@ -303,6 +307,7 @@ export default class LineAreaBarChart extends Component {
             settings={settings}
             onChangeCardAndRun={onChangeCardAndRun}
             actionButtons={actionButtons}
+            icon={headerIcon}
           />
         )}
         {hasMultiSeriesHeaderSeries || (!hasTitle && actionButtons) ? ( // always show action buttons if we have them
@@ -391,7 +396,6 @@ function transformSingleSeries(s, series, seriesIndex) {
       }
 
       const newRow = rowColumnIndexes.map(columnIndex => row[columnIndex]);
-      // $FlowFixMe: _origin not typed
       newRow._origin = { seriesIndex, rowIndex, row, cols };
       seriesRows.push(newRow);
     }
@@ -459,7 +463,6 @@ function transformSingleSeries(s, series, seriesIndex) {
         data: {
           rows: rows.map((row, rowIndex) => {
             const newRow = rowColumnIndexes.map(i => row[i]);
-            // $FlowFixMe: _origin not typed
             newRow._origin = { seriesIndex, rowIndex, row, cols };
             return newRow;
           }),

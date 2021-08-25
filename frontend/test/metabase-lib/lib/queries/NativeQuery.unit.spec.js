@@ -116,9 +116,6 @@ describe("NativeQuery", () => {
         );
         expect(fakeMongoQuery.collection()).toBe(fakeCollectionID);
       });
-      it("sure would be nice to have some error checking on this", () => {
-        pending();
-      });
     });
     describe("table()", () => {
       it("returns null for a non-mongo query", () => {
@@ -207,7 +204,7 @@ describe("NativeQuery", () => {
         assocIn(
           q.datasetQuery(),
           ["native", "template-tags", "foo", "dimension"],
-          ["field-id", 123],
+          ["field", 123, null],
         ),
       );
       expect(q.canRun()).toBe(true);
@@ -307,7 +304,7 @@ describe("NativeQuery", () => {
         .setTemplateTag("category", {
           name: "category",
           type: "dimension",
-          dimension: ["field-id", PRODUCTS.CATEGORY.id],
+          dimension: ["field", PRODUCTS.CATEGORY.id, null],
         });
       const dimensions = q.dimensionOptions().dimensions;
       expect(dimensions).toHaveLength(1);

@@ -1,3 +1,4 @@
+/* eslint-disable react/prop-types */
 import React from "react";
 
 import { t } from "ttag";
@@ -12,9 +13,9 @@ const PermissionsTabs = ({ tab, onChangeTab }) => (
         { name: t`Data permissions`, value: `databases` },
         { name: t`Collection permissions`, value: `collections` },
       ]}
-      onChange={onChangeTab}
-      underlined
-      py={1}
+      onOptionClick={onChangeTab}
+      variant="underlined"
+      py={2}
     />
   </div>
 );

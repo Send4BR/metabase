@@ -29,6 +29,14 @@ export default class DimensionOptions {
   }
 
   hasDimension(dimension: Dimension): boolean {
+    if (!dimension) {
+      console.error(
+        "attempted to call FieldDimension.hasDimension() with null dimension",
+        dimension,
+      );
+      return false;
+    }
+
     for (const d of this.all()) {
       if (dimension.isSameBaseDimension(d)) {
         return true;
@@ -39,8 +47,10 @@ export default class DimensionOptions {
 
   sections({ extraItems = [] } = {}): Section[] {
     const table = this.dimensions[0] && this.dimensions[0].field().table;
+    const tableName =
+      table && !table.isSavedQuestion() ? table.objectName() : null;
     const mainSection = {
-      name: this.name || (table && table.objectName()),
+      name: this.name || tableName,
       icon: this.icon || "table2",
       items: [
         ...extraItems,

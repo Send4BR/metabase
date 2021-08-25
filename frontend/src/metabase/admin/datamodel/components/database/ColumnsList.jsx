@@ -1,3 +1,4 @@
+/* eslint-disable react/prop-types */
 import React, { Component } from "react";
 import PropTypes from "prop-types";
 import { t } from "ttag";
@@ -59,7 +60,12 @@ export default class ColumnsList extends Component {
     return positionById;
   }
 
+  handleSortStart = () => {
+    document.body.classList.add("grabbing");
+  };
+
   handleSortEnd = async ({ oldIndex, newIndex }) => {
+    document.body.classList.remove("grabbing");
     if (oldIndex === newIndex) {
       return;
     }
@@ -108,6 +114,7 @@ export default class ColumnsList extends Component {
           </div>
         </div>
         <SortableColumns
+          onSortStart={this.handleSortStart}
           onSortEnd={this.handleSortEnd}
           helperClass="ColumnSortHelper"
           useDragHandle={true}

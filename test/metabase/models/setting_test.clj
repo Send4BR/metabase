@@ -1,24 +1,20 @@
 (ns metabase.models.setting-test
   (:require [clojure.test :refer :all]
-            [metabase
-             [test :as mt]
-             [util :as u]]
+            [environ.core :as env]
+            [medley.core :as m]
             [metabase.models.setting :as setting :refer [defsetting Setting]]
             [metabase.models.setting.cache :as cache]
-            [metabase.test
-             [fixtures :as fixtures]
-             [util :refer :all]]
-            [metabase.util
-             [encryption-test :as encryption-test]
-             [i18n :as i18n :refer [deferred-tru]]]
+            [metabase.test :as mt]
+            [metabase.test.fixtures :as fixtures]
+            [metabase.test.util :refer :all]
+            [metabase.util :as u]
+            [metabase.util.encryption-test :as encryption-test]
+            [metabase.util.i18n :as i18n :refer [deferred-tru]]
             [toucan.db :as db]))
 
 (use-fixtures :once (fixtures/initialize :db))
 
 ;; ## TEST SETTINGS DEFINITIONS
-;; TODO! These don't get loaded by `lein ring server` unless this file is touched
-;; so if you run unit tests while `lein ring server` is running (i.e., no Jetty server is started)
-;; these tests will fail. FIXME
 
 (defsetting test-setting-1
   (deferred-tru "Test setting - this only shows up in dev (1)"))
@@ -31,25 +27,29 @@
   (deferred-tru "Test setting - this only shows up in dev (3)")
   :visibility :internal)
 
-(defsetting ^:private test-boolean-setting
+(defsetting test-boolean-setting
   "Test setting - this only shows up in dev (3)"
   :visibility :internal
   :type :boolean)
 
-(defsetting ^:private test-json-setting
+(defsetting test-json-setting
   (deferred-tru "Test setting - this only shows up in dev (4)")
   :type :json)
 
-(defsetting ^:private test-csv-setting
+(defsetting test-csv-setting
   "Test setting - this only shows up in dev (5)"
   :visibility :internal
   :type :csv)
 
-(defsetting ^:private test-csv-setting-with-default
+(defsetting test-csv-setting-with-default
   "Test setting - this only shows up in dev (6)"
   :visibility :internal
   :type :csv
   :default "A,B,C")
+
+(defsetting test-env-setting
+  "Test setting - this only shows up in dev (7)"
+  :visibility :internal)
 
 (setting/defsetting toucan-name
   "Name for the Metabase Toucan mascot."
@@ -62,7 +62,9 @@
   [setting-name]
   (db/select-one-field :value Setting, :key (name setting-name)))
 
-(defn setting-exists-in-db? [setting-name]
+(defn setting-exists-in-db?
+  "Returns a boolean indicating whether a setting has a value stored in the application DB."
+  [setting-name]
   (boolean (Setting :key (name setting-name))))
 
 (deftest string-tag-test
@@ -71,10 +73,10 @@
            (:tag (meta #'test-setting-1))))))
 
 (deftest defsetting-getter-fn-test
-  (testing "Test defsetting getter fn. Should return the value from env var MB_TEST_SETTING_1"
-    (test-setting-1 nil)
+  (testing "Test defsetting getter fn. Should return the value from env var MB_TEST_ENV_SETTING"
+    (test-env-setting nil)
     (is (= "ABCDEFG"
-           (test-setting-1))))
+           (test-env-setting))))
 
   (testing "Test getting a default value -- if you clear the value of a Setting it should revert to returning the default value"
     (test-setting-2 nil)
@@ -133,18 +135,17 @@
 
 (deftest delete-test
   (testing "delete"
-    (testing "w/o default value, but with env var value"
+    (testing "w/o default value"
       (test-setting-1 "COOL")
       (is (= "COOL"
              (test-setting-1)))
       (is (= true
              (setting-exists-in-db? :test-setting-1)))
       (test-setting-1 nil)
-      (testing "env var value"
-        (is (= "ABCDEFG"
-               (test-setting-1)))
-        (is (= "ABCDEFG"
-               (setting/get :test-setting-1))))
+      (is (= nil
+             (test-setting-1)))
+      (is (= nil
+             (setting/get :test-setting-1)))
       (is (= false
              (setting-exists-in-db? :test-setting-1))))
 
@@ -171,7 +172,7 @@
 (defn- user-facing-info-with-db-and-env-var-values [setting db-value env-var-value]
   (do-with-temporary-setting-value setting db-value
     (fn []
-      (with-redefs [environ.core/env {(keyword (str "mb-" (name setting))) env-var-value}]
+      (with-redefs [env/env {(keyword (str "mb-" (name setting))) env-var-value}]
         (dissoc (#'setting/user-facing-info (#'setting/resolve-setting setting))
                 :key :description)))))
 
@@ -200,12 +201,12 @@
     (is (= {:value "WOW", :is_env_setting false, :env_name "MB_TEST_SETTING_2", :default "[Default Value]"}
            (user-facing-info-with-db-and-env-var-values :test-setting-2 "WOW" nil))))
 
-  (testing "user-facing info w/ db value, env var value, no default value -- the DB value should take precedence over the env var"
-    (is (= {:value "WOW", :is_env_setting true, :env_name "MB_TEST_SETTING_1", :default "Using value of env var $MB_TEST_SETTING_1"}
+  (testing "user-facing info w/ db value, env var value, no default value -- the env var should take precedence over the db value, but should be obfuscated"
+    (is (= {:value nil, :is_env_setting true, :env_name "MB_TEST_SETTING_1", :default "Using value of env var $MB_TEST_SETTING_1"}
            (user-facing-info-with-db-and-env-var-values :test-setting-1 "WOW" "ENV VAR"))))
 
-  (testing "user-facing info w/ db value, env var value, default value -- env var should take precedence over default"
-    (is (= {:value "WOW", :is_env_setting true, :env_name "MB_TEST_SETTING_2", :default "Using value of env var $MB_TEST_SETTING_2"}
+  (testing "user-facing info w/ db value, env var value, default value -- env var should take precedence over default, but should be obfuscated"
+    (is (= {:value nil, :is_env_setting true, :env_name "MB_TEST_SETTING_2", :default "Using value of env var $MB_TEST_SETTING_2"}
            (user-facing-info-with-db-and-env-var-values :test-setting-2 "WOW" "ENV VAR")))))
 
 (deftest all-test
@@ -243,13 +244,13 @@
       (test-setting-2 "S2")
       (is (= [{:key            :test-setting-1
                :value          nil
-               :is_env_setting true
+               :is_env_setting false
                :env_name       "MB_TEST_SETTING_1"
                :description    "Test setting - this only shows up in dev (1)"
-               :default        "Using value of env var $MB_TEST_SETTING_1"}
+               :default        nil}
               {:key            :test-setting-2
                :value          "S2"
-               :is_env_setting false,
+               :is_env_setting false
                :env_name       "MB_TEST_SETTING_2"
                :description    "Test setting - this only shows up in dev (2)"
                :default        "[Default Value]"}]
@@ -257,7 +258,7 @@
                    :when   (re-find #"^test-setting-\d$" (name (:key setting)))]
                setting))))))
 
-(defsetting ^:private test-i18n-setting
+(defsetting test-i18n-setting
   (deferred-tru "Test setting - with i18n"))
 
 (deftest validate-description-test
@@ -415,25 +416,26 @@
 
 (deftest previously-encrypted-settings-test
   (testing "Make sure settings that were encrypted don't cause `user-facing-info` to blow up if encyrption key changed"
-    (encryption-test/with-secret-key "0B9cD6++AME+A7/oR7Y2xvPRHX3cHA2z7w+LbObd/9Y="
-      (test-json-setting {:abc 123})
-      (is (not= "{\"abc\":123}"
-                (actual-value-in-db :test-json-setting))))
-    (testing (str "If fetching the Setting fails (e.g. because key changed) `user-facing-info` should return `nil` "
-                  "rather than failing entirely")
-      (encryption-test/with-secret-key nil
-        (is (= {:key            :test-json-setting
-                :value          nil
-                :is_env_setting false
-                :env_name       "MB_TEST_JSON_SETTING"
-                :description    "Test setting - this only shows up in dev (4)"
-                :default        nil}
-               (#'setting/user-facing-info (setting/resolve-setting :test-json-setting))))))))
+    (mt/discard-setting-changes [test-json-setting]
+      (encryption-test/with-secret-key "0B9cD6++AME+A7/oR7Y2xvPRHX3cHA2z7w+LbObd/9Y="
+        (test-json-setting {:abc 123})
+        (is (not= "{\"abc\":123}"
+                  (actual-value-in-db :test-json-setting))))
+      (testing (str "If fetching the Setting fails (e.g. because key changed) `user-facing-info` should return `nil` "
+                    "rather than failing entirely")
+        (encryption-test/with-secret-key nil
+          (is (= {:key            :test-json-setting
+                  :value          nil
+                  :is_env_setting false
+                  :env_name       "MB_TEST_JSON_SETTING"
+                  :description    "Test setting - this only shows up in dev (4)"
+                  :default        nil}
+                 (#'setting/user-facing-info (setting/resolve-setting :test-json-setting)))))))))
 
 
 ;;; ----------------------------------------------- TIMESTAMP SETTINGS -----------------------------------------------
 
-(defsetting ^:private test-timestamp-setting
+(defsetting test-timestamp-setting
   "Test timestamp setting"
   :visibility :internal
   :type :timestamp)
@@ -450,13 +452,17 @@
 
 ;;; ----------------------------------------------- Uncached Settings ------------------------------------------------
 
-(defn clear-settings-last-updated-value-in-db! []
+(defn clear-settings-last-updated-value-in-db!
+  "Deletes the timestamp for the last updated setting from the DB."
+  []
   (db/simple-delete! Setting {:key cache/settings-last-updated-key}))
 
-(defn settings-last-updated-value-in-db []
+(defn settings-last-updated-value-in-db
+  "Fetches the timestamp of the last updated setting."
+  []
   (db/select-one-field :value Setting :key cache/settings-last-updated-key))
 
-(defsetting ^:private uncached-setting
+(defsetting uncached-setting
   "A test setting that should *not* be cached."
   :visibility :internal
   :cache? false)
@@ -516,3 +522,80 @@
     ;; ok, make sure the setting was set
     (is (= "Banana Beak"
            (toucan-name)))))
+
+(deftest duplicated-setting-name
+  (testing "can re-register a setting in the same ns (redefining or reloading ns)"
+    (is (defsetting foo (deferred-tru "A testing setting") :visibility :public))
+    (is (defsetting foo (deferred-tru "A testing setting") :visibility :public)))
+  (testing "if attempt to register in a different ns throws an error"
+    (let [current-ns (ns-name *ns*)]
+      (try
+        (ns nested-setting-test
+          (:require [metabase.models.setting :refer [defsetting]]
+                    [metabase.util.i18n :as i18n :refer [deferred-tru]]))
+        (defsetting foo (deferred-tru "A testing setting") :visibility :public)
+        (catch Exception e
+          (is (= {:existing-setting
+                  {:description (deferred-tru "A testing setting"),
+                   :cache? true,
+                   :default nil,
+                   :name :foo,
+                   :munged-name "foo"
+                   :type :string,
+                   :sensitive? false,
+                   :tag 'java.lang.String,
+                   :namespace current-ns
+                   :visibility :public}}
+                 (ex-data e)))
+          (is (= (str "Setting :foo already registered in " current-ns)
+                 (ex-message e))))
+        (finally (in-ns current-ns))))))
+
+(defsetting test-setting-with-question-mark?
+  "Test setting - this only shows up in dev (6)"
+  :visibility :internal)
+
+(deftest munged-setting-name-test
+  (testing "Only valid characters used for environment lookup"
+    (is (nil? (test-setting-with-question-mark?)))
+    ;; note now question mark on the environmental setting
+    (with-redefs [env/env {:mb-test-setting-with-question-mark "resolved"}]
+      (binding [setting/*disable-cache* false]
+        (is (= "resolved" (test-setting-with-question-mark?))))))
+  (testing "Setting a setting that would munge the same throws an error"
+    (is (= {:existing-setting
+            {:name :test-setting-with-question-mark?
+             :munged-name "test-setting-with-question-mark"}
+            :new-setting
+            {:name :test-setting-with-question-mark????
+             :munged-name "test-setting-with-question-mark"}}
+           (m/map-vals #(select-keys % [:name :munged-name])
+                       (try (defsetting test-setting-with-question-mark????
+                              "Test setting - this only shows up in dev (6)"
+                              :visibility :internal)
+                            (catch Exception e (ex-data e)))))))
+  (testing "Munge collision on first definition"
+    (defsetting test-setting-normal
+      "Test setting - this only shows up in dev (6)"
+      :visibility :internal)
+    (is (= {:existing-setting {:name :test-setting-normal, :munged-name "test-setting-normal"},
+            :new-setting {:name :test-setting-normal??, :munged-name "test-setting-normal"}}
+           (m/map-vals #(select-keys % [:name :munged-name])
+                       (try (defsetting test-setting-normal??
+                              "Test setting - this only shows up in dev (6)"
+                              :visibility :internal)
+                            (catch Exception e (ex-data e)))))))
+  (testing "Munge collision on second definition"
+    (defsetting test-setting-normal-1??
+      "Test setting - this only shows up in dev (6)"
+      :visibility :internal)
+    (is (= {:new-setting {:munged-name "test-setting-normal-1", :name :test-setting-normal-1},
+             :existing-setting {:munged-name "test-setting-normal-1", :name :test-setting-normal-1??}}
+           (m/map-vals #(select-keys % [:name :munged-name])
+                       (try (defsetting test-setting-normal-1
+                              "Test setting - this only shows up in dev (6)"
+                              :visibility :internal)
+                            (catch Exception e (ex-data e)))))))
+  (testing "Removes characters not-compliant with shells"
+    (is (= "aa1aa-b2b_cc3c"
+           (#'setting/munge-setting-name "aa1'aa@#?-b2@b_cc'3?c?")))))

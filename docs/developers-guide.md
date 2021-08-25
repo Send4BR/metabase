@@ -8,11 +8,11 @@
 
 # Contributing
 
-In general, we like to have an open issue for every pull request as a place to discuss the nature of any bug or proposed improvement. Each pull request should address a single issue, and contain both the fix as well as a description of how the pull request and tests that validate that the PR fixes the issue in question.
+In general, we like to have an open issue for every pull request as a place to discuss the nature of any bug or proposed improvement. Each pull request should address a single issue, and contain both the fix as well as a description of the pull request and tests that validate that the PR fixes the issue in question.
 
 For significant feature additions, it is expected that discussion will have taken place in the attached issue. Any feature that requires a major decision to be reached will need to have an explicit design document written. The goals of this document are to make explicit the assumptions, constraints and tradeoffs any given feature implementation will contain. The point is not to generate documentation but to allow discussion to reference a specific proposed design and to allow others to consider the implications of a given design.
 
-We don't like getting sued, so before merging any pull request, we'll need each person contributing code to sign a Contributor License Agreement [here](https://docs.google.com/a/metabase.com/forms/d/1oV38o7b9ONFSwuzwmERRMi9SYrhYeOrkbmNaq9pOJ_E/viewform)
+We don't like getting sued, so before merging any pull request, we'll need each person contributing code to sign a Contributor License Agreement [here](https://docs.google.com/a/metabase.com/forms/d/1oV38o7b9ONFSwuzwmERRMi9SYrhYeOrkbmNaq9pOJ_E/viewform).
 
 # Development on Windows
 
@@ -22,18 +22,27 @@ If you have problems with your development environment, make sure that you are n
 
 # Install Prerequisites
 
-These are the set of tools which are required in order to complete any build of the Metabase code. Follow the links to download and install them on your own before continuing.
+These are the tools which are required in order to complete any build of the Metabase code. Follow the links to download and install them on your own before continuing.
 
-1. [Java Development Kit JDK (https://adoptopenjdk.net/releases.html)](https://adoptopenjdk.net/releases.html) - latest LTS version of JDK - more about [Java versions](./operations-guide/java-versions.md)
-2. [Node.js (http://nodejs.org/)](http://nodejs.org/) - latest LTS release
-3. [Yarn package manager for Node.js](https://yarnpkg.com/) - latest release of version 1.x
-4. [Leiningen (http://leiningen.org/)](http://leiningen.org/) - latest release
+1. [Clojure (https://clojure.org)](https://clojure.org/guides/getting_started) - install the latest release by following the guide depending on your OS
+2. [Java Development Kit JDK (https://adoptopenjdk.net/releases.html)](https://adoptopenjdk.net/releases.html) - you need to install JDK 11 ([more info on Java versions](./operations-guide/java-versions.md))
+3. [Node.js (http://nodejs.org/)](http://nodejs.org/) - latest LTS release
+4. [Yarn package manager for Node.js](https://yarnpkg.com/) - latest release of version 1.x - you can install it in any OS by doing `npm install --global yarn`
+
+On a most recent stable Ubuntu/Debian, all the tools above, with the exception of Clojure, can be installed by using:
+
+```
+sudo apt install openjdk-11-jdk nodejs && sudo npm install --global yarn
+```
+If you have multiple JDK versions installed in your machine, be sure to switch your JDK before building by doing `sudo update-alternatives --config java` and selecting Java 11 in the menu
 
 If you are developing on Windows, make sure to use Ubuntu on Windows and follow instructions for Ubuntu/Linux instead of installing ordinary Windows versions.
 
+Alternatively, without the need to explicitly install the above dependencies, follow the guide [on using Visual Studio Code](developers-guide-vscode.md) and its remote container support.
+
 # Build Metabase
 
-The entire Metabase application is compiled and assembled into a single .jar file which can run on any modern JVM. There is a script which will execute all steps in the process and output the final artifact for you.
+The entire Metabase application is compiled and assembled into a single .jar file which can run on any modern JVM. There is a script which will execute all steps in the process and output the final artifact for you. You can pass the environment variable MB_EDITION before running the build script to choose the version that you want to build. If you don't provide a value, the default is `oss` which will build the Community Edition.
 
     ./bin/build
 
@@ -49,7 +58,7 @@ If you plan to work on the Metabase code and make changes then you'll need to un
 
 ### Overview
 
-The Metabase application has two basic compnents:
+The Metabase application has two basic components:
 
 1. a backend written in Clojure which contains a REST API as well as all the relevant code for talking to databases and processing queries.
 2. a frontend written as a Javascript single-page application which provides the web UI.
@@ -69,7 +78,7 @@ $ yarn
 
 Run your backend development server with
 
-    lein run
+    clojure -M:run
 
 Start the frontend build process with
 
@@ -115,101 +124,23 @@ All frontend tests are located in `frontend/test` directory. Run all frontend te
 yarn test
 ```
 
-which will run unit, end-to-end, and legacy Karma browser tests in sequence.
+which will run unit and Cypress end-to-end tests in sequence.
 
-### End-to-end tests
+### Cypress end-to-end tests
 
-End-to-end tests simulate realistic sequences of user interactions. They render a complete DOM tree using [Enzyme](http://airbnb.io/enzyme/docs/api/index.html) and use temporary backend instances for executing API calls.
+End-to-end tests simulate realistic sequences of user interactions. Read more about how we approach end-to-end testing with Cypress in our [wiki page](https://github.com/metabase/metabase/wiki/E2E-Tests-with-Cypress).
 
-End-to-end tests use an enforced file naming convention `<test-suite-name>.e2e.spec.js` to separate them from unit tests.
-
-Useful commands:
-
-```bash
-lein run refresh-integration-test-db-metadata # Scan the sample dataset and re-run sync/classification/field values caching
-yarn test-e2e-watch # Watches for file changes and runs the tests that have changed
-yarn test-e2e-watch TestFileName # Watches the files in paths that match the given (regex) string
-```
-
-The way integration tests are written is a little unconventional so here is an example that hopefully helps in getting up to speed:
-
-```
-import {
-    useSharedAdminLogin,
-    createTestStore,
-} from "__support__/e2e";
-import {
-    click
-} from "__support__/enzyme"
-
-import { mount } from "enzyme"
-
-import { FETCH_DATABASES } from "metabase/redux/metadata";
-import { INITIALIZE_QB } from "metabase/query_builder/actions";
-import RunButton from "metabase/query_builder/components/RunButton";
-
-describe("Query builder", () => {
-    beforeAll(async () => {
-        // Usually you want to test stuff where user is already logged in
-        // so it is convenient to login before any test case.
-        useSharedAdminLogin()
-    })
-
-    it("should let you run a new query", async () => {
-        // Create a superpowered Redux store.
-        // Remember `await` here!
-        const store = await createTestStore()
-
-        // Go to a desired path in the app. This is safest to do before mounting the app.
-        store.pushPath('/question')
-
-        // Get React container for the whole app and mount it using Enzyme
-        const app = mount(store.getAppContainer())
-
-        // Usually you want to wait until the page has completely loaded, and our way to do that is to
-        // wait until the completion of specified Redux actions. `waitForActions` is also useful for verifying that
-        // specific operations are properly executed after user interactions.
-        // Remember `await` here!
-        await store.waitForActions([FETCH_DATABASES, INITIALIZE_QB])
-
-        // You can use `enzymeWrapper.debug()` to see what is the state of DOM tree at the moment
-        console.log(app.debug())
-
-        // You can use `testStore.debug()` method to see which Redux actions have been dispatched so far.
-        // Note that as opposed to Enzyme's debugging method, you don't need to wrap the call to `console.log()`.
-        store.debug();
-
-        // For simulating user interactions like clicks and input events you should use methods defined
-        // in `enzyme.js` as they abstract away some React/Redux complexities.
-        click(app.find(RunButton))
-
-        // Note: In pretty rare cases where rendering the whole app is problematic or slow, you can just render a single
-        // React container instead with `testStore.connectContainer(container)`. In that case you are not able
-        // to click links that lead to other router paths.
-    });
-})
-```
-
-You can also skim through [`__support__/e2e.js`](https://github.com/metabase/metabase/blob/master/frontend/test/__support__/e2e.js) and [`__support__/enzyme.js`](https://github.com/metabase/metabase/blob/master/frontend/test/__support__/enzyme.js) to see all available methods.
+Cypress end-to-end tests use an enforced file naming convention `<test-suite-name>.cy.spec.js` to separate them from unit tests.
 
 ### Jest unit tests
 
 Unit tests are focused around isolated parts of business logic.
 
-Unit tests use an enforced file naming convention `<test-suite-name>.unit.spec.js` to separate them from end-to-end and integration tests.
+Unit tests use an enforced file naming convention `<test-suite-name>.unit.spec.js` to separate them from end-to-end tests.
 
 ```
 yarn test-unit # Run all tests at once
 yarn test-unit-watch # Watch for file changes
-```
-
-### Karma browser tests
-
-If you need to test code which uses browser APIs that are only available in real browsers, you can add a Karma test to `frontend/test/legacy-karma` directory.
-
-```
-yarn test-karma # Run all tests once
-yarn test-karma-watch # Watch for file changes
 ```
 
 ## Backend development
@@ -218,12 +149,13 @@ Leiningen and your REPL are the main development tools for the backend. There ar
 
 And of course your Jetty development server is available via
 
-    lein run
+    clojure -M:run
 
 ### Building drivers
 
-Most of the drivers Metabase uses to connect to external data warehouse databases are separate Leiningen projects under the `modules/` subdirectory. When running Metabase via `lein`, you'll
-need to build these drivers in order to have access to them. You can build drivers as follows:
+Most of the drivers Metabase uses to connect to external data warehouse databases are separate projects under the
+`modules/` subdirectory. When running Metabase via `clojure`, you'll need to build these drivers in order to have access
+to them. You can build drivers as follows:
 
 ```
 # Build the 'mongo' driver
@@ -237,41 +169,58 @@ need to build these drivers in order to have access to them. You can build drive
 ./bin/build-drivers.sh
 ```
 
-The first time you build a driver, it will be a bit slow, because Metabase needs to build the core project a couple of times so the driver can use it as a dependency; you can take comfort in the
-fact that you won't need to build the driver again after that. Alternatively, running Metabase 1.0+ from the uberjar will unpack all of the pre-built drivers into your plugins directory; you can
-do this instead if you already have a Metabase uberjar (just make sure `plugins` is in the root directory of the Metabase source, i.e. the same directory as `project.clj`).
+### Including driver source paths for development or other tasks
 
-### Including driver source paths for development or other Leiningen tasks
-
-For development when running various Leiningen tasks you can add the `include-all-drivers` profile to merge the drivers' dependencies and source paths into the Metabase
-project:
+For development when running various Leiningen tasks you can add the `drivers` and `drivers-dev` aliases to merge the
+drivers' dependencies and source paths into the Metabase project:
 
 ```
-# Install dependencies
-lein with-profiles +include-all-drivers deps
+# Install dependencies, including for drivers
+clojure -P -X:dev:ci:drivers:drivers-dev
 ```
-
-This profile is added by default when running `lein repl`, tests, and linters.
 
 #### Unit Tests / Linting
 
 Run unit tests with
 
-    lein test
+    # OSS tests only
+    clojure -X:dev:test
 
-or a specific test with
+    # OSS + EE tests
+    clojure -X:dev:ee:ee-dev:test
 
-    lein test metabase.api.session-test
+or a specific test (or test namespace) with
+
+    # run tests in only one namespace (pass in a symbol)
+    clojure -X:dev:test :only metabase.api.session-test
+
+    # run one specific test (pass in a qualified symbol)
+    clojure -X:dev:test :only metabase.api.session-test/my-test
+
+    # run tests in one specific folder (test/metabase/util in this example)
+    # pass arg in double-quotes so Clojure CLI interprets it as a string;
+    # our test runner treats strings as directories
+    clojure -X:dev:test :only '"test/metabase/util"'
 
 By default, the tests only run against the `h2` driver. You can specify which drivers to run tests against with the env var `DRIVERS`:
 
-    DRIVERS=h2,postgres,mysql,mongo lein test
+    DRIVERS=h2,postgres,mysql,mongo clojure -X:dev:drivers:drivers-dev:test
 
 Some drivers require additional environment variables when testing since they are impossible to run locally (such as Redshift and Bigquery). The tests will fail on launch and let you know what parameters to supply if needed.
 
 ##### Run the linters:
 
-    lein eastwood && lein bikeshed && lein docstring-checker && lein check-namespace-decls && ./bin/reflection-linter
+`clj-kondo` must be installed separately; see https://github.com/clj-kondo/clj-kondo/blob/master/doc/install.md for
+instructions.
+
+    # Run Eastwood
+    clojure -X:dev:ee:ee-dev:drivers:drivers-dev:eastwood
+
+    # Run the namespace checker
+    clojure -X:dev:ee:ee-dev:drivers:drivers-dev:namespace-checker
+
+    # Run clj-kondo
+    clj-kondo --parallel --lint src shared/src enterprise/backend/src --config lint-config.edn
 
 #### Developing with Emacs
 
@@ -316,6 +265,6 @@ If you see incorrect or missing strings for your language, please visit our [POE
 
 ## License
 
-Copyright © 2020 Metabase, Inc.
+Copyright © 2021 Metabase, Inc.
 
 Distributed under the terms of the GNU Affero General Public License (AGPL) except as otherwise noted. See individual files for details.

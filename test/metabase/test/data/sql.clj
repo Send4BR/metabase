@@ -2,10 +2,9 @@
   "Common test extension functionality for all SQL drivers."
   (:require [clojure.string :as str]
             [clojure.tools.logging :as log]
-            [metabase
-             [driver :as driver]
-             [query-processor :as qp]]
+            [metabase.driver :as driver]
             [metabase.driver.sql.util :as sql.u]
+            [metabase.query-processor :as qp]
             [metabase.test.data :as data]
             [metabase.test.data.interface :as tx])
   (:import metabase.test.data.interface.FieldDefinition))
@@ -41,7 +40,7 @@
 
    By default, this qualifies field names with their table name, but otherwise does no other specific
   qualification."
-  {:arglists '([driver database-name? table-name? field-name?])}
+  {:arglists '([driver database-name table-name? field-name?])}
   tx/dispatch-on-driver-with-test-extensions
   :hierarchy #'driver/hierarchy)
 
@@ -173,7 +172,6 @@
   tx/dispatch-on-driver-with-test-extensions
   :hierarchy #'driver/hierarchy)
 
-
 (defmulti create-db-sql
   "Return a `CREATE DATABASE` statement."
   {:arglists '([driver dbdef])}
@@ -183,7 +181,6 @@
 (defmethod create-db-sql :sql/test-extensions [driver {:keys [database-name]}]
   (format "CREATE DATABASE %s;" (qualify-and-quote driver database-name)))
 
-
 (defmulti drop-db-if-exists-sql
   "Return a `DROP DATABASE` statement."
   {:arglists '([driver dbdef])}
@@ -192,7 +189,6 @@
 
 (defmethod drop-db-if-exists-sql :sql/test-extensions [driver {:keys [database-name]}]
   (format "DROP DATABASE IF EXISTS %s;" (qualify-and-quote driver database-name)))
-
 
 (defmulti create-table-sql
   "Return a `CREATE TABLE` statement."
@@ -209,12 +205,23 @@
             pk-field-name (pk-sql-type driver)
             (str/join
              ", "
-             (for [{:keys [field-name base-type field-comment]} field-definitions]
+             (for [{:keys [field-name base-type field-comment] :as field} field-definitions]
                (str (format "%s %s"
                             (quot field-name)
-                            (if (map? base-type)
-                              (:native base-type)
-                              (field-base-type->sql-type driver base-type)))
+                            (or (cond
+                                  (and (map? base-type) (contains? base-type :native))
+                                  (:native base-type)
+
+                                  (and (map? base-type) (contains? base-type :natives))
+                                  (get-in base-type [:natives driver])
+
+                                  base-type
+                                  (field-base-type->sql-type driver base-type))
+                                (throw (ex-info (format "Missing datatype for field %s for driver: %s"
+                                                        field-name driver)
+                                                {:field field
+                                                 :driver driver
+                                                 :database-name database-name}))))
                     (when-let [comment (inline-column-comment-sql driver field-comment)]
                       (str " " comment)))))
             pk-field-name

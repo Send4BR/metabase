@@ -1,3 +1,4 @@
+/* eslint-disable react/prop-types */
 import React from "react";
 
 import { t } from "ttag";
@@ -42,7 +43,7 @@ export default function QuestionFilters({
           <FilterPill
             invert
             icon="filter"
-            className="mr1 mb1 cursor-pointer"
+            className="text-small mr1 mb1 cursor-pointer"
             onClick={expanded ? onCollapse : onExpand}
             data-metabase-event={
               expanded

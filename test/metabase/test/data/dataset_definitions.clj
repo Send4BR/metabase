@@ -51,6 +51,23 @@
   not explicitly marked as a foreign key, because the test dataset syntax does not yet have a way to support nullable
   foreign keys.)")
 
+(tx/defdataset-edn airports
+  "Major international airports from around the world. Location information is broken out into a series of tables:
+
+    Continent > Country > Region (e.g. State) > Municipality (e.g. City) > Airport
+
+  This makes this dataset ideal for testing things where we must join multiple levels of tables.
+
+  There are some `nil` `:name` strings in the `region` and `municipality` tables. `airport` has a row with an airport
+  whose `:code` is an empty string.")
+
+(tx/defdataset-edn sample-dataset
+  "The sample dataset that ships with Metabase, but converted to an EDN dataset definition so it can be used in tests.
+  This dataset is pretty large (over 20k rows) so it can take a long time to load -- keep that in mind. There is one
+  difference from the H2 version that ships with Metabase -- this version uses `:type/DateTimeWithTZ` `updated_at`
+  columns (i.e., `TIMESTAMP WITH TIME ZONE`) instead of `:type/DateType`, to make it easier to use this test data
+  across multiple databases.")
+
 (defn- date-only
   "Convert date or datetime temporal value to `t` to an appropriate date type, discarding time information."
   [t]
@@ -75,7 +92,6 @@
       OffsetTime     t
       OffsetDateTime (t/offset-time t)
       ZonedDateTime  (t/offset-time t))))
-
 
 (defonce ^{:doc "The main `test-data` dataset, but only the `users` table, and with `last_login_date` and
   `last_login_time` instead of `last_login`."}
@@ -148,7 +164,8 @@
           [username last-login password-text (if (zero? idx)
                                                1
                                                idx)])))))
-(tx/defdataset ^:private attempted-murders
+
+(tx/defdataset attempted-murders
   "A dataset for testing temporal values with and without timezones. Records of number of crow counts spoted and the
   date/time when they spotting occured in several different column types.
 
@@ -192,5 +209,4 @@
        (t/local-time t)                 ; time
        (t/offset-time t)                ; time-ltz
        (t/offset-time t)                ; time-tz
-       cnt                              ; num-crows
-       ])]])
+       cnt])]])                              ; num-crows

@@ -1,5 +1,3 @@
-/* @flow */
-
 import { t } from "ttag";
 import moment from "moment";
 import _ from "underscore";
@@ -31,7 +29,7 @@ import {
   hasHour,
 } from "metabase/lib/formatting/date";
 
-import currency from "metabase/lib/currency";
+import { currency } from "cljs/metabase.shared.util.currency";
 
 import type { Settings, SettingDef } from "../settings";
 import type { DateStyle, TimeStyle } from "metabase/lib/formatting/date";
@@ -48,7 +46,7 @@ type ColumnGetter = (
 ) => Column[];
 
 const DEFAULT_GET_COLUMNS: ColumnGetter = (series, vizSettings) =>
-  [].concat(...series.map(s => s.data.cols));
+  [].concat(...series.map(s => (s.data && s.data.cols) || []));
 
 type ColumnSettingDef = SettingDef & {
   getColumns?: ColumnGetter,
@@ -80,8 +78,7 @@ export function getGlobalSettingsForColumn(column: Column) {
   const customFormatting = MetabaseSettings.get("custom-formatting");
   // NOTE: the order of these doesn't matter as long as there's no overlap between settings
   for (const [type, globalSettings] of Object.entries(customFormatting || {})) {
-    if (isa(column.special_type || column.base_type, type)) {
-      // $FlowFixMe
+    if (isa(column.semantic_type || column.base_type, type)) {
       Object.assign(settings, globalSettings);
     }
   }
@@ -271,7 +268,7 @@ export const DATE_COLUMN_SETTINGS = {
         ...(column.unit === "hour-of-day"
           ? [timeStyleOption("h A", "12-hour clock without minutes")]
           : []),
-        timeStyleOption("k:mm", t`24-hour clock`),
+        timeStyleOption("HH:mm", t`24-hour clock`),
       ],
     }),
     getHidden: (column: Column, settings: ColumnSettings) =>
@@ -315,9 +312,8 @@ export const NUMBER_COLUMN_SETTINGS = {
     widget: "select",
     props: {
       // FIXME: rest of these options
-      options: Object.values(currency).map(
-        // $FlowFixMe
-        (currency: { name: string, code: string }) => ({
+      options: currency.map(
+        ([_, currency: { name: string, code: string }]) => ({
           name: currency.name,
           value: currency.code,
         }),
@@ -327,32 +323,43 @@ export const NUMBER_COLUMN_SETTINGS = {
     },
     default: "USD",
     getHidden: (column: Column, settings: ColumnSettings) =>
-      // NOTE: ideally we'd hide this if number_style != "currency" but that would result in a circular dependency
-      !isCurrency(column),
+      settings["number_style"] !== "currency",
   },
   currency_style: {
     title: t`Currency label style`,
     widget: "radio",
     getProps: (column: Column, settings: ColumnSettings) => {
       const c = settings["currency"] || "USD";
+      const symbol = getCurrency(c, "symbol");
+      const code = getCurrency(c, "code");
+      const name = getCurrency(c, "name");
       return {
         options: [
+          ...(symbol !== code
+            ? [
+                {
+                  name: t`Symbol` + ` ` + `(${symbol})`,
+                  value: "symbol",
+                },
+              ]
+            : []),
           {
-            name: t`Symbol` + ` ` + `(${getCurrency(c, "symbol")})`,
-            value: "symbol",
-          },
-          {
-            name: t`Code` + ` ` + `(${getCurrency(c, "code")})`,
+            name: t`Code` + ` ` + `(${code})`,
             value: "code",
           },
           {
-            name: t`Name` + ` ` + `(${getCurrency(c, "name")})`,
+            name: t`Name` + ` ` + `(${name})`,
             value: "name",
           },
         ],
       };
     },
-    default: "symbol",
+    getDefault: (column: Column, settings: ColumnSettings) => {
+      const c = settings["currency"] || "USD";
+      return getCurrency(c, "symbol") !== getCurrency(c, "code")
+        ? "symbol"
+        : "code";
+    },
     getHidden: (column: Column, settings: ColumnSettings) =>
       settings["number_style"] !== "currency",
     readDependencies: ["number_style"],
@@ -386,6 +393,7 @@ export const NUMBER_COLUMN_SETTINGS = {
         { name: "100 000,00", value: ", " },
         { name: "100.000,00", value: ",." },
         { name: "100000.00", value: "." },
+        { name: "100’000.00", value: ".’" },
       ],
     },
     default: ".,",

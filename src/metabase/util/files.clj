@@ -18,7 +18,7 @@
 
 ;;; --------------------------------------------------- Path Utils ---------------------------------------------------
 
-(defn- get-path-in-filesystem ^Path [^FileSystem filesystem, ^String path-component & more-components]
+(defn- get-path-in-filesystem ^Path [^FileSystem filesystem ^String path-component & more-components]
   (.getPath filesystem path-component (u/varargs String more-components)))
 
 (defn get-path
@@ -74,19 +74,21 @@
   (when (exists? path)
     (.toInstant (Files/getLastModifiedTime path (u/varargs LinkOption)))))
 
-(defn- copy-file! [^Path source, ^Path dest]
+(defn copy-file!
+  "Copy a file from `source` -> `dest`."
+  [^Path source ^Path dest]
   (when (or (not (exists? dest))
             (not= (last-modified-timestamp source) (last-modified-timestamp dest)))
-    (u/profile (trs "Extract file {0} -> {1}" source dest)
-      (Files/copy source dest (u/varargs CopyOption [StandardCopyOption/REPLACE_EXISTING
-                                                     StandardCopyOption/COPY_ATTRIBUTES])))))
+    (log/info (trs "Extract file {0} -> {1}" source dest))
+    (Files/copy source dest (u/varargs CopyOption [StandardCopyOption/REPLACE_EXISTING
+                                                   StandardCopyOption/COPY_ATTRIBUTES]))))
 
 (defn copy-files!
   "Copy all files in `source-dir` to `dest-dir`. Overwrites existing files if last modified timestamp is not the same as
   that of the source file — see #11699 for more context."
   [^Path source-dir, ^Path dest-dir]
   (doseq [^Path source (files-seq source-dir)
-          :let [target (append-to-path dest-dir (str (.getFileName source)))]]
+          :let         [target (append-to-path dest-dir (str (.getFileName source)))]]
     (try
       (copy-file! source target)
       (catch Throwable e

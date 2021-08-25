@@ -1,5 +1,3 @@
-/* @flow */
-
 import type StructuredQuery from "../StructuredQuery";
 
 export default class MBQLArrayClause extends Array {
@@ -10,6 +8,15 @@ export default class MBQLArrayClause extends Array {
     super(...mbql);
     _private(this, "_index", index);
     _private(this, "_query", query);
+  }
+
+  // There is a mismatch between the constructor args for `MBQLArrayClause` and `Array`
+  // so we need to reconcile things in the MBQLArrayClause[Symbol.species] constructor function
+  // See https://stackoverflow.com/questions/54522949
+  static get [Symbol.species]() {
+    return Object.assign(function(...items) {
+      return new MBQLArrayClause(new Array(...items), this._index, this._query);
+    }, MBQLArrayClause);
   }
 
   set(mbql: any[]) {
@@ -28,7 +35,6 @@ export default class MBQLArrayClause extends Array {
   }
 
   setQuery(query: StructuredQuery) {
-    // $FlowFixMe
     return new this.constructor(this, this._index, query);
   }
 
@@ -40,12 +46,10 @@ export default class MBQLArrayClause extends Array {
    * replaces the previous clause with this one and propagates an update, recursively
    */
   update(...args: any) {
-    // $FlowFixMe
     return this.replace(this).update(undefined, ...args);
   }
 
   parent() {
-    // $FlowFixMe
     return this.replace(this);
   }
 
@@ -57,7 +61,6 @@ export default class MBQLArrayClause extends Array {
   }
 
   raw(): any[] {
-    // $FlowFixMe
     return [...this];
   }
 }

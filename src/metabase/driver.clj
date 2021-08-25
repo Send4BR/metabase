@@ -1,19 +1,18 @@
 (ns metabase.driver
   "Metabase Drivers handle various things we need to do with connected data warehouse databases, including things like
   introspecting their schemas and processing and running MBQL queries. Drivers must implement some or all of the
-  multimethods defined below, and register themselves with a call to `register!`.
+  multimethods defined below, and register themselves with a call to [[metabase.driver/register!]].
 
   SQL-based drivers can use the `:sql` driver as a parent, and JDBC-based SQL drivers can use `:sql-jdbc`. Both of
-  these drivers define additional multimethods that child drivers should implement; see `metabase.driver.sql` and
-  `metabase.driver.sql-jdbc` for more details."
+  these drivers define additional multimethods that child drivers should implement; see [[metabase.driver.sql]] and
+  [[metabase.driver.sql-jdbc]] for more details."
   (:require [clojure.string :as str]
             [clojure.tools.logging :as log]
             [metabase.driver.impl :as impl]
             [metabase.models.setting :as setting :refer [defsetting]]
             [metabase.plugins.classloader :as classloader]
-            [metabase.util
-             [i18n :refer [deferred-tru trs tru]]
-             [schema :as su]]
+            [metabase.util.i18n :refer [deferred-tru trs tru]]
+            [metabase.util.schema :as su]
             [potemkin :as p]
             [schema.core :as s]
             [toucan.db :as db])
@@ -24,10 +23,10 @@
 (defn- notify-all-databases-updated
   "Send notification that all Databases should immediately release cached resources (i.e., connection pools).
 
-  Currently only used below by `report-timezone` setter (i.e., only used when report timezone changes). Reusing pooled
-  connections with the old session timezone can have weird effects, especially if report timezone is changed to nil
-  (meaning subsequent queries will not attempt to change the session timezone) or something considered invalid by a
-  given Database (meaning subsequent queries will fail to change the session timezone)."
+  Currently only used below by [[report-timezone]] setter (i.e., only used when report timezone changes). Reusing
+  pooled connections with the old session timezone can have weird effects, especially if report timezone is changed to
+  `nil` (meaning subsequent queries will not attempt to change the session timezone) or something considered invalid
+  by a given Database (meaning subsequent queries will fail to change the session timezone)."
   []
   (doseq [{driver :engine, id :id, :as database} (db/select 'Database)]
     (try
@@ -96,10 +95,10 @@
   ((every-pred impl/registered? impl/concrete?) driver))
 
 (defn the-driver
-  "Like Clojure core `the-ns`. Converts argument to a keyword, then loads and registers the driver if not already done,
+  "Like [[clojure.core/the-ns]]. Converts argument to a keyword, then loads and registers the driver if not already done,
   throwing an Exception if it fails or is invalid. Returns keyword. Note that this does not neccessarily mean the
   driver is initialized (e.g., its full implementation and deps might not be loaded into memory) -- see also
-  `the-initialized-driver`.
+  [[the-initialized-driver]].
 
   This is useful in several cases:
 
@@ -133,7 +132,7 @@
   "Dispatch function to use for driver multimethods. Dispatches on first arg, a driver keyword; loads that driver's
   namespace if not already done. DOES NOT INITIALIZE THE DRIVER.
 
-  Driver multimethods for abstract drivers like `:sql` or `:sql-jdbc` should use `dispatch-on-initialized-driver` to
+  Driver multimethods for abstract drivers like `:sql` or `:sql-jdbc` should use [[dispatch-on-initialized-driver]] to
   ensure the driver is initialized (i.e., its method implementations will be loaded)."
   [driver & _]
   (the-driver driver))
@@ -141,16 +140,16 @@
 (declare initialize!)
 
 (defn the-initialized-driver
-  "Like `the-driver`, but also initializes the driver if not already initialized."
+  "Like [[the-driver]], but also initializes the driver if not already initialized."
   [driver]
   (let [driver (the-driver driver)]
     (impl/initialize-if-needed! driver initialize!)
     driver))
 
 (defn dispatch-on-initialized-driver
-  "Like `dispatch-on-uninitialized-driver`, but guarantees a driver is initialized before dispatch. Prefer `the-driver`
-  for trivial methods that should do not require the driver to be initialized (e.g., ones that simply return
-  information about the driver, but do not actually connect to any databases.)"
+  "Like [[dispatch-on-uninitialized-driver]], but guarantees a driver is initialized before dispatch. Prefer
+  [[the-driver]] for trivial methods that should do not require the driver to be initialized (e.g., ones that simply
+  return information about the driver, but do not actually connect to any databases.)"
   [driver & _]
   (the-initialized-driver driver))
 
@@ -181,10 +180,10 @@
   is called; implementers should do one-time initialization as needed (for example, registering JDBC drivers used
   internally by the driver.)
 
-  'Trivial' methods include a tiny handful of ones like `connection-properties` that simply provide information about
-  the driver, but do not connect to databases; these can be be supplied, for example, by a Metabase plugin manifest
-  file (which is supplied for lazy-loaded drivers). Methods that require connecting to a database dispatch off of
-  `the-initialized-driver`, which will initialize a driver if not already done so.
+  'Trivial' methods include a tiny handful of ones like [[connection-properties]] that simply provide information
+  about the driver, but do not connect to databases; these can be be supplied, for example, by a Metabase plugin
+  manifest file (which is supplied for lazy-loaded drivers). Methods that require connecting to a database dispatch
+  off of [[the-initialized-driver]], which will initialize a driver if not already done so.
 
   You will rarely need to write an implentation for this method yourself. A lazy-loaded driver (like most of the
   Metabase drivers in v1.0 and above) are automatiaclly given an implentation of this method that performs the
@@ -193,17 +192,16 @@
   If you do need to implement this method yourself, you do not need to call parent implementations. We'll take care of
   that for you."
   {:arglists '([driver])}
-  dispatch-on-uninitialized-driver
+  dispatch-on-uninitialized-driver)
   ;; VERY IMPORTANT: Unlike all other driver multimethods, we DO NOT use the driver hierarchy for dispatch here. Why?
   ;; We do not want a driver to inherit parent drivers' implementations and have those implementations end up getting
   ;; called multiple times. If a driver does not implement `initialize!`, *always* fall back to the default no-op
   ;; implementation.
   ;;
   ;; `initialize-if-needed!` takes care to make sure a driver's parent(s) are initialized before initializing a driver.
-  )
+
 
 (defmethod initialize! :default [_]) ; no-op
-
 
 (defmulti display-name
   "A nice name for the driver that we'll display to in the admin panel, e.g. \"PostgreSQL\" for `:postgres`. Default
@@ -220,7 +218,6 @@
 (defmethod display-name :default [driver]
   (str/capitalize (name driver)))
 
-
 (defmulti can-connect?
   "Check whether we can connect to a `Database` with `details-map` and perform a simple query. For example, a SQL
   database might try running a query like `SELECT 1;`. This function should return truthy if a connection to the DB
@@ -230,46 +227,43 @@
   dispatch-on-initialized-driver
   :hierarchy #'hierarchy)
 
-(defmulti ^{:deprecated "0.34.2"} date-add
-  "DEPRECATED -- this method is only used or implemented by `:sql` drivers. It has been superseded by
-  `metabase.driver.sql.query-processor/add-interval-honeysql-form`. Use/implement that method instead. DO NOT use or
-  implement this method for non-`:sql` drivers.
-
-  This method will be removed at some point in the future."
-  {:arglists '([driver hsql-form amount unit])}
-  dispatch-on-initialized-driver
-  :hierarchy #'hierarchy)
-
-
 (defmulti describe-database
   "Return a map containing information that describes all of the tables in a `database`, an instance of the `Database`
   model. It is expected that this function will be peformant and avoid draining meaningful resources of the database.
-  Results should match the `metabase.sync.interface/DatabaseMetadata` schema."
+  Results should match the [[metabase.sync.interface/DatabaseMetadata]] schema."
   {:arglists '([driver database])}
   dispatch-on-initialized-driver
   :hierarchy #'hierarchy)
 
-
 (defmulti describe-table
   "Return a map containing information that describes the physical schema of `table` (i.e. the fields contained
-  therein). `database` will be an instance of the `Database` model; and `table`, an instance of the `Table` model. It is
-  expected that this function will be peformant and avoid draining meaningful resources of the database. Results
-  should match the `metabase.sync.interface/TableMetadata` schema."
+  therein). `database` will be an instance of the `Database` model; and `table`, an instance of the `Table` model. It
+  is expected that this function will be peformant and avoid draining meaningful resources of the database. Results
+  should match the [[metabase.sync.interface/TableMetadata]] schema."
   {:arglists '([driver database table])}
   dispatch-on-initialized-driver
   :hierarchy #'hierarchy)
 
+(defmulti escape-entity-name-for-metadata
+  "escaping for when calling `.getColumns` or `.getTables` on table names or schema names. Useful for when a database
+  driver has difference escaping rules for table or schema names when used from metadata.
+
+  For example, oracle treats slashes differently when querying versus when used with `.getTables` or `.getColumns`"
+  {:arglists '([driver table-name])}
+  dispatch-on-initialized-driver
+  :hierarchy #'hierarchy)
+
+(defmethod escape-entity-name-for-metadata :default [_driver table-name] table-name)
 
 (defmulti describe-table-fks
   "Return information about the foreign keys in a `table`. Required for drivers that support `:foreign-keys`. Results
-  should match the `metabase.sync.interface/FKMetadata` schema."
+  should match the [[metabase.sync.interface/FKMetadata]] schema."
   {:arglists '([this database table])}
   dispatch-on-initialized-driver
   :hierarchy #'hierarchy)
 
 (defmethod describe-table-fks ::driver [_ _ _]
   nil)
-
 
 (def ConnectionDetailsProperty
   "Schema for a map containing information about a connection property we should ask the user to supply when setting up
@@ -308,9 +302,9 @@
   "Return information about the connection properties that should be exposed to the user for databases that will use
   this driver. This information is used to build the UI for editing a Database `details` map, and for validating it on
   the backend. It should include things like `host`, `port`, and other driver-specific parameters. Each property must
-  conform to the `ConnectionDetailsProperty` schema above.
+  conform to the [[ConnectionDetailsProperty]] schema above.
 
-  There are several definitions for common properties available in the `metabase.driver.common` namespace, such as
+  There are several definitions for common properties available in the [[metabase.driver.common]] namespace, such as
   `default-host-details` and `default-port-details`. Prefer using these if possible.
 
   Like `display-name`, lazy-loaded drivers should specify this in their plugin manifest; `lazy-loaded-driver` will
@@ -326,7 +320,7 @@
 
     (respond results-metadata rows)
 
-  You can use `qp.reducible/reducible-rows` to create reducible, streaming results.
+  You can use [[metabase.query-processor.reducible/reducible-rows]] to create reducible, streaming results.
 
   Example impl:
 
@@ -419,9 +413,7 @@
 (defmethod supports? :default [_ _] false)
 
 (defmethod supports? [::driver :basic-aggregations] [_ _] true)
-
 (defmethod supports? [::driver :case-sensitivity-string-filter-options] [_ _] true)
-
 
 (defmulti ^:deprecated format-custom-field-name
   "Prior to Metabase 0.33.0, you could specifiy custom names for aggregations in MBQL by wrapping the clause in a
@@ -448,7 +440,6 @@
 (defmethod format-custom-field-name ::driver [_ custom-field-name]
   custom-field-name)
 
-
 (defmulti humanize-connection-error-message
   "Return a humanized (user-facing) version of an connection error message.
   Generic error messages are provided in `metabase.driver.common/connection-error-messages`; return one of these
@@ -461,7 +452,6 @@
 
 (defmethod humanize-connection-error-message ::driver [_ message]
   message)
-
 
 (defmulti mbql->native
   "Transpile an MBQL query into the appropriate native query form. `query` will match the schema for an MBQL query in
@@ -480,7 +470,6 @@
   {:arglists '([driver query]), :style/indent 1}
   dispatch-on-initialized-driver
   :hierarchy #'hierarchy)
-
 
 (defmulti splice-parameters-into-native-query
   "For a native query that has separate parameters, such as a JDBC prepared statement, e.g.
@@ -512,7 +501,6 @@
   [_ query]
   query)
 
-
 ;; TODO - we should just have some sort of `core.async` channel to handle DB update notifications instead
 (defmulti notify-database-updated
   "Notify the driver that the attributes of a `database` have changed, or that `database was deleted. This is
@@ -524,7 +512,6 @@
 
 (defmethod notify-database-updated ::driver [_ _]
   nil) ; no-op
-
 
 (defmulti sync-in-context
   "Drivers may provide this function if they need to do special setup before a sync operation such as
@@ -538,7 +525,6 @@
   :hierarchy #'hierarchy)
 
 (defmethod sync-in-context ::driver [_ _ f] (f))
-
 
 (defmulti table-rows-seq
   "Return a sequence of *all* the rows in a given `table`, which is guaranteed to have at least `:name` and `:schema`
@@ -602,3 +588,48 @@
   :hierarchy #'hierarchy)
 
 (defmethod default-field-order ::driver [_] :database)
+
+(defmulti db-start-of-week
+  "Return start of week for given database"
+  {:added "0.37.0" :arglists '([driver])}
+  dispatch-on-initialized-driver
+  :hierarchy #'hierarchy)
+
+(defmulti incorporate-ssh-tunnel-details
+  "A multimethod for driver-specific behavior required to incorporate details for an opened SSH tunnel into the DB
+  details. In most cases, this will simply involve updating the :host and :port (to point to the tunnel entry point,
+  instead of the backing database server), but some drivers may have more specific behavior."
+  {:added "0.39.0" :arglists '([driver db-details])}
+  dispatch-on-uninitialized-driver
+  :hierarchy #'hierarchy)
+
+(defmulti normalize-db-details
+  "Normalizes db-details for the given driver. This is to handle migrations that are too difficult to perform via
+  regular Liquibase queries. This multimethod will be called from a `:post-select` handler within the database model.
+  The full `database` model object is passed as the 2nd parameter, and the multimethod implementation is expected to
+  update the value for `:details`. The default implementation is essentially `identity` (i.e returns `database`
+  unchanged). This multimethod will only be called if `:details` is actually present in the `database` map."
+  {:added "0.41.0" :arglists '([driver database])}
+  dispatch-on-initialized-driver
+  :hierarchy #'hierarchy)
+
+(defmethod normalize-db-details ::driver
+  [_ db-details]
+  ;; no normalization by default
+  db-details)
+
+(defmulti superseded-by
+  "Returns the driver that supersedes the given `driver`.  A non-nil return value means that the given `driver` is
+  deprecated in Metabase and will eventually be replaced by the returned driver, in some future version (at which point
+  any databases using it will be migrated to the new one).
+
+  This is currently only used on the frontend for the purpose of showing/hiding deprecated drivers. A driver can make
+  use of this facility by adding a top-level `superseded-by` key to its plugin manifest YAML file, or (less preferred)
+  overriding this multimethod directly."
+  {:added "0.41.0" :arglists '([driver])}
+  dispatch-on-uninitialized-driver
+  :hierarchy #'hierarchy)
+
+(defmethod superseded-by :default
+  [_]
+  nil)

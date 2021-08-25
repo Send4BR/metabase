@@ -1,3 +1,4 @@
+/* eslint-disable react/prop-types */
 import React, { Component } from "react";
 import PropTypes from "prop-types";
 import { Link, withRouter } from "react-router";
@@ -32,20 +33,8 @@ export default class MetadataHeader extends Component {
     this.setDatabaseIdIfUnset();
   }
 
-  componentWillMount() {
+  UNSAFE_componentWillMount() {
     this.setDatabaseIdIfUnset();
-  }
-
-  setSaving() {
-    this.refs.status.setSaving.apply(this, arguments);
-  }
-
-  setSaved() {
-    this.refs.status.setSaved.apply(this, arguments);
-  }
-
-  setSaveError() {
-    this.refs.status.setSaveError.apply(this, arguments);
   }
 
   // Show a gear to access Table settings page if we're currently looking at a Table. Otherwise show nothing.
@@ -67,15 +56,20 @@ export default class MetadataHeader extends Component {
 
   render() {
     return (
-      <div className="MetadataEditor-header flex align-center flex-no-shrink">
-        <div className="MetadataEditor-headerSection py2 h2">
+      <div className="MetadataEditor-header flex align-center flex-no-shrink pb2">
+        <Icon
+          className="flex align-center flex-no-shrink text-medium"
+          name="database"
+        />
+        <div className="MetadataEditor-headerSection h2">
           <DatabaseDataSelector
             selectedDatabaseId={this.props.databaseId}
             setDatabaseFn={id => this.props.selectDatabase({ id })}
+            style={{ padding: 0, paddingLeft: 8 }}
           />
         </div>
         <div className="MetadataEditor-headerSection flex flex-align-right align-center flex-no-shrink">
-          <SaveStatus ref="status" />
+          <SaveStatus />
           <div className="mr1 text-medium">{t`Show original schema`}</div>
           <Toggle
             value={this.props.isShowingSchema}

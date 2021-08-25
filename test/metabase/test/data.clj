@@ -33,23 +33,14 @@
       ;; -> {:source-table (data/id :venues), :fields [(data/id :venues :name)]}
 
      (There are several variations of this macro; see documentation below for more details.)"
-  (:require [cheshire.core :as json]
-            [clojure.test :as t]
+  (:require [clojure.test :as t]
             [colorize.core :as colorize]
-            [medley.core :as m]
-            [metabase
-             [query-processor :as qp]
-             [util :as u]]
-            [metabase.driver.util :as driver.u]
-            [metabase.models
-             [dimension :refer [Dimension]]
-             [field-values :refer [FieldValues]]]
-            [metabase.test.data
-             [dataset-definitions :as defs]
-             [impl :as impl]
-             [interface :as tx]
-             [mbql-query-impl :as mbql-query-impl]]
-            [toucan.db :as db]))
+            [metabase.query-processor :as qp]
+            [metabase.test-runner.init :as test-runner.init]
+            [metabase.test.data.impl :as impl]
+            [metabase.test.data.interface :as tx]
+            [metabase.test.data.mbql-query-impl :as mbql-query-impl]
+            [metabase.util :as u]))
 
 ;;; ------------------------------------------ Dataset-Independent Data Fns ------------------------------------------
 
@@ -87,33 +78,33 @@
 
     %venue_id -> (id :sightings :venue_id)
 
-  Use `*<field>` to generate appropriate an `:field-literal` based on a Field in the application DB:
+  Use `*<field>` to generate a `:field` with a string name based on a Field in the application DB:
 
-    *venue_id -> [:field-literal \"VENUE_ID\" :type/Integer]
+    *venue_id -> [:field \"VENUE_ID\" {:base-type :type/Integer}]
 
-  Use `*<field>/type` to generate a `:field-literal` for an aggregation or native query result:
+  Use `*<field>/type` to generate a `:field` with a string name for an aggregation or native query result:
 
-    *count/Integer -> [:field-literal \"count\" :type/Integer]
+    *count/Integer -> [:field \"count\" {:base-type :type/Integer}]
 
-  Use `&<alias>.<field>` to wrap `<field>` in a `:joined-field` clause:
+  Use `&<alias>.<field>` to add `:join-alias` information to a `<field>` clause:
 
-    &my_venues.venues.id -> [:joined-field \"my_venues\" [:field-id (data/id :venues :id)]]
+    &my_venues.venues.id -> [:field (data/id :venues :id) {:join-alias \"my_venues\"}]
 
-  Use `!<unit>.<field>` to wrap a field in a `:datetime-field` clause:
+  Use `!<unit>.<field>` to add `:temporal-unit` information to a `:field` clause:
 
-    `!month.checkins.date` -> [:datetime-field [:field-id (data/id :checkins :date)] :month]
+    `!month.checkins.date` -> [:field (data/id :checkins :date) {:temporal-unit :month}]
 
 
   For both `&` and `!`, if the wrapped Field does not have a sigil, it is handled recursively as if it had `$` (i.e.,
-  it generates a `:field-id` clause); you can explicitly specify a sigil to wrap a different type of clause instead:
+  it generates a `:field` ID clause); you can explicitly specify a sigil to wrap a different type of clause instead:
 
-    `!month.*checkins.date` -> [:datetime-field [:field-literal \"DATE\" :type/DateTime] :month]
+    `!month.*checkins.date` -> [:field \"DATE\" {:base-type :type/DateTime, :temporal-unit :month}]
 
   NOTES:
 
     *  Only symbols that end in alphanumeric characters will be parsed, so as to avoid accidentally parsing things that
        do not refer to Fields."
-  {:style/indent 1}
+  {:style/indent [:defn 1]}
   ([form]
    `($ids nil ~form))
 
@@ -123,14 +114,12 @@
 (defmacro mbql-query
   "Macro for easily building MBQL queries for test purposes.
 
-  Cheatsheet:
-
-  *  `$`  = wrapped Field ID
+  *  `$`  = `:field` clause wrapping Field ID
   *  `$$` = table ID
   *  `%`  = raw Field ID
-  *  `*`  = field-literal for Field in app DB; `*field/type` for others
-  *  `&`  = wrap in `joined-field`
-  *  `!`  = wrap in `:datetime-field`
+  *  `*`  = `:field` clause wrapping Field name for a Field in app DB; use `*field/type` for others
+  *  `&`  = include `:join-alias`
+  *  `!`  = bucket by `:temporal-unit`
 
   (The 'cheatsheet' above is listed first so I can easily look at it with `autocomplete-mode` in Emacs.) This macro
   does the following:
@@ -174,12 +163,20 @@
     :type     :native
     :native   ~inner-native-query})
 
+(defn run-mbql-query* [query]
+  ;; catch the Exception and rethrow with the query itself so we can have a little extra info for debugging if it fails.
+  (try
+    (qp/process-query query)
+    (catch Throwable e
+      (throw (ex-info (.getMessage e)
+                      {:query query}
+                      e)))))
+
 (defmacro run-mbql-query
   "Like `mbql-query`, but runs the query as well."
   {:style/indent 1}
   [table-name & [query]]
-  `(qp/process-query
-     (mbql-query ~table-name ~(or query {}))))
+  `(run-mbql-query* (mbql-query ~table-name ~(or query {}))))
 
 (defn format-name
   "Format a SQL schema, table, or field identifier in the correct way for the current database by calling the driver's
@@ -195,7 +192,8 @@
   "Get the ID of the current database or one of its Tables or Fields. Relies on the dynamic variable `*get-db*`, which
   can be rebound with `with-db`."
   ([]
-   (u/get-id (db)))
+   (test-runner.init/assert-tests-are-not-initializing "(mt/id ...) or (data/id ...)")
+   (u/the-id (db)))
 
   ([table-name]
    (impl/the-table-id (id) (format-name table-name)))
@@ -204,8 +202,8 @@
    (apply impl/the-field-id (id table-name) (map format-name (cons field-name nested-field-names)))))
 
 (defmacro dataset
-  "Load and sync a temporary Database defined by `dataset`, make it the current DB (for `metabase.test.data` functions
-  like `id` and `db`), and execute `body`.
+  "Create a database and load it with the data defined by `dataset`, then do a quick metadata-only sync; make it the
+  current DB (for `metabase.test.data` functions like `id` and `db`), and execute `body`.
 
   `dataset` can be one of the following:
 
@@ -243,71 +241,3 @@
   {:style/indent 0}
   [& body]
   `(impl/do-with-temp-copy-of-db (fn [] ~@body)))
-
-(defmacro with-temp-objects
-  "Calls `data-load-fn` to create a sequence of Toucan objects, then runs `body`; finally, deletes the objects."
-  [data-load-fn & body]
-  `(impl/do-with-temp-objects ~data-load-fn (fn [] ~@body)))
-
-
-;;; +----------------------------------------------------------------------------------------------------------------+
-;;; |                                          Rarely-Used Helper Functions                                          |
-;;; +----------------------------------------------------------------------------------------------------------------+
-
-(defn fks-supported?
-  "Does the current driver support foreign keys?"
-  []
-  (contains? (driver.u/features (tx/driver)) :foreign-keys))
-
-(defn binning-supported?
-  "Does the current driver support binning?"
-  []
-  (contains? (driver.u/features (tx/driver)) :binning))
-
-(defn id-field-type  [] (tx/id-field-type (tx/driver)))
-
-;; The functions below are used so infrequently they hardly belong in this namespace.
-
-(defn dataset-field-values
-  "Get all the values for a field in a `dataset-definition`.
-
-    (dataset-field-values \"categories\" \"name\") ; -> [\"African\" \"American\" \"Artisan\" ...]"
-  ([table-name field-name]
-   (dataset-field-values defs/test-data table-name field-name))
-
-  ([dataset-definition table-name field-name]
-   (some
-    (fn [{:keys [field-definitions rows], :as tabledef}]
-      (when (= table-name (:table-name tabledef))
-        (some
-         (fn [[i fielddef]]
-           (when (= field-name (:field-name fielddef))
-             (map #(nth % i) rows)))
-         (m/indexed field-definitions))))
-    (:table-definitions (tx/get-dataset-definition dataset-definition)))))
-
-(def ^:private category-names
-  (delay (vec (dataset-field-values "categories" "name"))))
-
-;; TODO - you should always call these functions with the `with-data` macro. We should enforce this
-(defn create-venue-category-remapping!
-  "Returns a thunk that adds an internal remapping for category_id in the venues table aliased as `remapping-name`.
-  Can be used in a `with-data` invocation."
-  [remapping-name]
-  (fn []
-    [(db/insert! Dimension {:field_id (id :venues :category_id)
-                            :name     remapping-name
-                            :type     :internal})
-     (db/insert! FieldValues {:field_id              (id :venues :category_id)
-                              :values                (json/generate-string (range 1 (inc (count @category-names))))
-                              :human_readable_values (json/generate-string @category-names)})]))
-
-(defn create-venue-category-fk-remapping!
-  "Returns a thunk that adds a FK remapping for category_id in the venues table aliased as `remapping-name`. Can be
-  used in a `with-data` invocation."
-  [remapping-name]
-  (fn []
-    [(db/insert! Dimension {:field_id                (id :venues :category_id)
-                            :name                    remapping-name
-                            :type                    :external
-                            :human_readable_field_id (id :categories :name)})]))

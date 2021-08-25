@@ -1,6 +1,9 @@
-/* @flow */
-
-import type { DatasetData, Column, Row } from "metabase-types/types/Dataset";
+import type {
+  DatasetData,
+  Column,
+  Row,
+  Value,
+} from "metabase-types/types/Dataset";
 import type { Card, VisualizationSettings } from "metabase-types/types/Card";
 import type { ReduxAction } from "metabase-types/types/redux";
 import Question from "metabase-lib/lib/Question";
@@ -39,10 +42,11 @@ export type ClickObject = {
     row: Row,
     cols: Column[],
   },
+  extraData?: { [key: string]: any },
 };
 
 export type ClickAction = {
-  title: any, // React Element
+  title?: any, // React Element
   icon?: string,
   popover?: (props: ClickActionPopoverProps) => any, // React Element
   question?: () => ?Question,

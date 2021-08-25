@@ -1,24 +1,32 @@
 (ns metabase.api.query-description
   "Functions for generating human friendly query descriptions"
   (:require [clojure.string :as str]
-            [metabase.mbql
-             [predicates :as mbql.preds]
-             [util :as mbql.u]]
-            [metabase.models
-             [field :refer [Field]]
-             [metric :refer [Metric]]
-             [segment :refer [Segment]]]
-            [metabase.util.i18n :as ui18n :refer [deferred-tru]]))
+            [clojure.tools.logging :as log]
+            [metabase.mbql.predicates :as mbql.preds]
+            [metabase.mbql.util :as mbql.u]
+            [metabase.models.field :refer [Field]]
+            [metabase.models.metric :refer [Metric]]
+            [metabase.models.segment :refer [Segment]]
+            [metabase.util.i18n :as ui18n :refer [deferred-tru]]
+            [toucan.db :as db]))
 
 (defn- get-table-description
   [metadata query]
   {:table (:display_name metadata)})
 
+(defn- field-clause->display-name [clause]
+  (mbql.u/match-one clause
+    [:field (id :guard integer?) _]
+    (db/select-one-field :display_name Field :id id)
+
+    [:field (field-name :guard string?) _]
+    field-name))
+
 (defn- get-aggregation-details
   [metadata query]
-  (let [field-name (fn [match] (or (when (mbql.preds/Field? match)
-                                     (:display_name (Field (mbql.u/field-clause->id-or-literal match))))
-                                   (flatten (get-aggregation-details metadata match))))]
+  (letfn [(field-name [match] (or (when (mbql.preds/Field? match)
+                                    (field-clause->display-name match))
+                                  (flatten (get-aggregation-details metadata match))))]
     (when-let [agg-matches (mbql.u/match query
                              [:aggregation-options _ (options :guard :display-name)]
                              {:type :aggregation :arg (:display-name options)}
@@ -29,11 +37,13 @@
                              [(operator :guard #{:+ :- :/ :*}) & args]
                              (interpose (name operator) (map field-name args))
 
-                             [:metric arg]    {:type :metric
-                                               :arg  (let [metric (Metric arg)]
-                                                       (if (not (str/blank? (:name metric)))
-                                                         (:name metric)
-                                                         (deferred-tru "[Unknown Metric]")))}
+                             [:metric (arg :guard integer?)]
+                             {:type :metric
+                              :arg  (let [metric-name (db/select-one-field :name Metric :id arg)]
+                                      (if-not (str/blank? metric-name)
+                                        metric-name
+                                        (deferred-tru "[Unknown Metric]")))}
+
                              [:rows]          {:type :rows}
                              [:count]         {:type :count}
                              [:cum-count]     {:type :cum-count}
@@ -54,33 +64,31 @@
 (defn- get-breakout-description
   [metadata query]
   (when-let [breakouts (seq (:breakout query))]
-    {:breakout (map #(:display_name (Field %)) breakouts)}))
+    {:breakout (map #(db/select-one-field :display_name Field :id %) breakouts)}))
 
 (defn- get-filter-clause-description
   [metadata filt]
   (let [typ (first filt)]
-    (cond
-      (or (= :field-id typ)
-          (= :field-literal typ)) {:field (:display_name (Field (mbql.u/field-clause->id-or-literal filt)))}
-
-      (= :segment typ) {:segment (let [segment (Segment (second filt))]
-                                   (if segment
-                                     (:name segment)
-                                     (deferred-tru "[Unknown Segment]")))}
-
-      :else nil)))
+    (condp = typ
+      :field   {:field (field-clause->display-name filt)}
+      :segment {:segment (let [segment (Segment (second filt))]
+                           (if segment
+                             (:name segment)
+                             (deferred-tru "[Unknown Segment]")))}
+      nil)))
 
 (defn- get-filter-description
   [metadata query]
   (when-let [filters (:filter query)]
     {:filter (map #(get-filter-clause-description metadata %)
-                  (mbql.u/match filters #{:field-id :field-literal :segment} &match))}))
+                  (mbql.u/match filters #{:field :segment} &match))}))
 
 (defn- get-order-by-description
   [metadata query]
   (when-let [order-by (:order-by query)]
     {:order-by (map (fn [[direction field]]
-                      {:field (:display_name (Field (mbql.u/field-clause->id-or-literal field))) :direction direction})
+                      {:field     (field-clause->display-name field)
+                       :direction direction})
                     (mbql.u/match query #{:asc :desc} &match))}))
 
 (defn- get-limit-description
@@ -109,6 +117,10 @@
 
   This data structure allows the UI to format the strings appropriately (including JSX)"
   [metadata query]
-  (apply merge
-         (map (fn [f] (f metadata query))
-              query-descriptor-functions)))
+  (try
+    (apply merge
+           (map (fn [f] (f metadata query))
+                query-descriptor-functions))
+    (catch Exception e
+      (log/warn e "Error generating query description")
+      {})))

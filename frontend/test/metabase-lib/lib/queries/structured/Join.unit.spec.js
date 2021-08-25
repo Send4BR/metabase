@@ -1,4 +1,4 @@
-import { ORDERS, PRODUCTS } from "__support__/sample_dataset_fixture";
+import { ORDERS, PRODUCTS, REVIEWS } from "__support__/sample_dataset_fixture";
 
 import Join from "metabase-lib/lib/queries/structured/Join";
 
@@ -29,15 +29,43 @@ describe("Join", () => {
         alias: "x",
         condition: [
           "=",
-          ["field-id", 3],
-          ["joined-field", "x", ["field-id", 24]],
+          ["field", 3, null],
+          ["field", 24, { "join-alias": "x" }],
         ],
         "source-table": 3,
       });
     });
   });
   describe("setDefaultAlias", () => {
-    it("should set default alias to be fk field name and update join condition", () => {
+    it("should set default alias to be table + field name and update join condition", () => {
+      const q = ORDERS.query().join({
+        alias: "x",
+        condition: [
+          "=",
+          ["field", ORDERS.PRODUCT_ID.id, null],
+          ["field", REVIEWS.PRODUCT_ID.id, { "join-alias": "x" }],
+        ],
+        "source-table": REVIEWS.id,
+      });
+      const j = q
+        .joins()[0]
+        .setDefaultCondition()
+        .setDefaultAlias();
+      expect(j).toEqual({
+        alias: "Reviews - Product",
+        condition: [
+          "=",
+          ["field", ORDERS.PRODUCT_ID.id, null],
+          [
+            "field",
+            REVIEWS.PRODUCT_ID.id,
+            { "join-alias": "Reviews - Product" },
+          ],
+        ],
+        "source-table": REVIEWS.id,
+      });
+    });
+    it("should set default alias to be table name only if it is similar to field name", () => {
       const q = ORDERS.query().join({
         alias: "x",
         "source-table": PRODUCTS.id,
@@ -47,13 +75,13 @@ describe("Join", () => {
         .setDefaultCondition()
         .setDefaultAlias();
       expect(j).toEqual({
-        alias: "Product",
+        alias: "Products",
         condition: [
           "=",
-          ["field-id", 3],
-          ["joined-field", "Product", ["field-id", 24]],
+          ["field", ORDERS.PRODUCT_ID.id, null],
+          ["field", PRODUCTS.ID.id, { "join-alias": "Products" }],
         ],
-        "source-table": 3,
+        "source-table": PRODUCTS.id,
       });
     });
   });

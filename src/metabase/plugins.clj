@@ -4,12 +4,10 @@
             [clojure.tools.logging :as log]
             [environ.core :as env]
             [metabase.config :as config]
-            [metabase.plugins
-             [classloader :as classloader]
-             [initialize :as initialize]]
-            [metabase.util
-             [files :as files]
-             [i18n :refer [trs]]]
+            [metabase.plugins.classloader :as classloader]
+            [metabase.plugins.initialize :as initialize]
+            [metabase.util.files :as files]
+            [metabase.util.i18n :refer [trs]]
             [yaml.core :as yaml])
   (:import [java.nio.file Files Path]))
 
@@ -155,7 +153,7 @@
 
   *  Metabase creates the plugins directory if it does not already exist.
   *  Any plugins that are shipped as part of Metabase itself are extracted from the Metabase uberjar (or `resources`
-     directory when running with `lein`) into the plugins directory.
+     directory when running with the Clojure CLI) into the plugins directory.
   *  Each JAR in the plugins directory that *does not* include a Metabase plugin manifest is added to the classpath.
   *  For JARs that include a Metabase plugin manifest (a `metabase-plugin.yaml` file), a lazy-loading Metabase driver
      is registered; when the driver is initialized (automatically, when certain methods are called) the JAR is added

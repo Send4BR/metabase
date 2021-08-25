@@ -1,5 +1,3 @@
-/* @flow */
-
 import React, { Component } from "react";
 import { t } from "ttag";
 
@@ -35,6 +33,7 @@ function legacyScalarSettingsToFormatOptions(settings) {
 
 // used below to determine whether we show compact formatting
 const COMPACT_MAX_WIDTH = 250;
+const COMPACT_WIDTH_PER_DIGIT = 25;
 const COMPACT_MIN_LENGTH = 6;
 
 // Scalar visualization shows a single number
@@ -159,6 +158,7 @@ export default class Scalar extends Component {
       // title: t`Multiply by a number`,
       // widget: "number",
     },
+    click_behavior: {},
   };
 
   _getColumnIndex(cols: Column[], settings: VisualizationSettings) {
@@ -204,11 +204,20 @@ export default class Scalar extends Component {
 
     // use the compact version of formatting if the component is narrower than
     // the cutoff and the formatted value is longer than the cutoff
+    // also if the width is less than a certain multiplier of the number of digits
     const displayCompact =
-      fullScalarValue.length > COMPACT_MIN_LENGTH && width < COMPACT_MAX_WIDTH;
+      fullScalarValue !== null &&
+      fullScalarValue.length > COMPACT_MIN_LENGTH &&
+      (width < COMPACT_MAX_WIDTH ||
+        width < COMPACT_WIDTH_PER_DIGIT * fullScalarValue.length);
     const displayValue = displayCompact ? compactScalarValue : fullScalarValue;
 
-    const clicked = { value, column };
+    const clicked = {
+      value,
+      column,
+      data: rows[0].map((value, index) => ({ value, col: cols[index] })),
+      settings,
+    };
     const isClickable = visualizationIsClickable(clicked);
 
     return (

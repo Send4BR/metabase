@@ -88,10 +88,12 @@ Additionally, there is an option to configure the formatting of the values:
 - **Compact**. Metabase abbreviates values, e.g., 1,000 becomes 1K.
 - **Full**. Values are displayed in their natural beauty.
 
-Now go forth and start letting your data get to know each other.
+To learn more about how to create multi-series charts, check out our article on [time series comparisons](https://www.metabase.com/blog/Time-Series-Comparisons/index.html).
+
+Now go forth and start letting your data get to know each other!
 
 ---
 
-## Next: Getting reports with Pulses
+## Next: Dashboard subscriptions
 
-Pulses let you send out a group of saved questions on a schedule via email or Slack. [Get started with Pulses](10-pulses.md).
+Set up a dashboard to send updates via email or Slack with [dashboard subscriptions](dashboard-subscriptions.md).

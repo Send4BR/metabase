@@ -63,6 +63,16 @@ If you wish to have a parameter locked down to prevent your embedding applicatio
 
 ![Locked parameters](images/embedding/06-locked.png)
 
+When using locked Field Filters with multiple selected values, then it is provided as a JSON array. Example:
+
+```
+...
+params: {
+  foo: ['Value1', 'Value2'],
+},
+...
+```
+
 ### Hiding parameters
 
 If you have parameters that aren't required, but that you'd like to be hidden, instead of marking them as Locked you can use the `hide_parameters` URL option to hide one or more parameters (i.e., prevent it from showing up as a filter widget on screen). You'll want to add this option to the Metabase URL specified in your embedding iframe.
@@ -106,6 +116,16 @@ Dashboards are a fixed aspect ratio, so if you'd like to ensure they're automati
 <iframe src="http://metabase.example.com/embed/dashboard/TOKEN" onload="iFrameResize({}, this)"></iframe>
 ```
 
+### Additional parameters
+
+To change the look and feel of the embed, you can add additional parameters to the embedding URL:
+
+- **bordered**: true or false. Adds a visible border to the embed.
+- **titled**: true or false. Adds or removes the title to the embedding.
+- **theme**: null or night. Shows the embedded iframe in dark mode.
+
+For example: http://yourmetabaseurl.com/embed/dashboard/a_very_huge_hashed_url#theme=night&hide_parameters=category&titled=true&bordered=false
+
 ### Reference applications
 
 To see concrete examples of how to embed Metabase in applications under a number of common frameworks, check out our [reference implementations](https://github.com/metabase/embedding-reference-apps) on Github.
@@ -113,3 +133,9 @@ To see concrete examples of how to embed Metabase in applications under a number
 ## Premium embedding
 
 If you'd like to embed Metabase dashboards or charts in your application without the "Powered by Metabase" attribution, you can purchase premium embedding from the Metabase store. [Find out more here](https://store.metabase.com/product/embedding).
+
+To learn more about embedding, check out these articles:
+
+- [Embedding charts and dashboards](https://www.metabase.com/learn/developing-applications/advanced-metabase/embedding-charts-and-dashboards)
+- [Four strategies for delivering customer-facing analytics with Metabase](https://www.metabase.com/learn/developing-applications/advanced-metabase/embedding-overview)
+- [Embed Metabase in your app to deliver multi-tenant, self-service analytics](https://www.metabase.com/learn/developing-applications/advanced-metabase/multi-tenant-self-service-analytics.html)

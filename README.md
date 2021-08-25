@@ -5,7 +5,6 @@ Metabase is the easy, open source way for everyone in your company to ask questi
 ![Metabase Product Screenshot](docs/metabase-product-screenshot.png)
 
 [![Latest Release](https://img.shields.io/github/release/metabase/metabase.svg?label=latest%20release)](https://github.com/metabase/metabase/releases)
-[![GitHub license](https://img.shields.io/badge/license-AGPL-05B8CC.svg)](https://github.com/metabase/metabase/blob/master/LICENSE.txt)
 [![Circle CI](https://circleci.com/gh/metabase/metabase.svg?style=svg&circle-token=3ccf0aa841028af027f2ac9e8df17ce603e90ef9)](https://circleci.com/gh/metabase/metabase)
 [![codecov](https://codecov.io/gh/metabase/metabase/branch/master/graph/badge.svg)](https://codecov.io/gh/metabase/metabase)
 
@@ -16,7 +15,7 @@ Metabase is the easy, open source way for everyone in your company to ask questi
 - Rich beautiful [dashboards](https://metabase.com/docs/latest/users-guide/06-sharing-answers.html) with auto refresh and fullscreen
 - [SQL Mode](https://www.metabase.com/docs/latest/users-guide/writing-sql.html) for analysts and data pros
 - Create canonical [segments and metrics](https://metabase.com/docs/latest/administration-guide/07-segments-and-metrics.html) for your team to use
-- Send data to Slack or email on a schedule with [Pulses](https://metabase.com/docs/latest/users-guide/10-pulses.html)
+- Send data to Slack or email on a schedule with [dashboard subscriptions](https://www.metabase.com/docs/latest/users-guide/dashboard-subscriptions.html)
 - View data in Slack anytime with [MetaBot](https://metabase.com/docs/latest/users-guide/11-metabot.html)
 - [Humanize data](https://metabase.com/docs/latest/administration-guide/03-metadata-editing.html) for your team by renaming, annotating and hiding fields
 - See changes in your data with [alerts](https://www.metabase.com/docs/latest/users-guide/15-alerts.html)
@@ -25,23 +24,8 @@ For more information check out [metabase.com](https://metabase.com/)
 
 ## Supported databases
 
-- Amazon Redshift
-- Druid
-- Google Analytics
-- Google BigQuery
-- H2
-- MongoDB
-- MySQL
-- Oracle
-- PostgreSQL
-- Presto
-- Snowflake
-- SparkSQL
-- SQL Server
-- SQLite
-- Vertica
-
-Don't see your favorite database? Check the list of [community supported drivers](https://www.metabase.com/docs/latest/developers-guide-drivers.html#how-to-use-a-community-built-driver).
+- [Officially supported databases](https://www.metabase.com/docs/latest/administration-guide/01-managing-databases.html#officially-supported-databases).
+- [Community-supported drivers](https://www.metabase.com/docs/latest/developers-guide-drivers.html#how-to-use-a-community-built-driver).
 
 ## Installation
 
@@ -80,7 +64,7 @@ Some questions come up over and over again. Check here first:
 
 # Security Disclosure
 
-Security is very important to us. If you discover any issue regarding security, please disclose the information responsibly by sending an email to security@metabase.com and not by creating a GitHub issue.
+See [SECURITY.md](./SECURITY.md) for details.
 
 # Contributing
 
@@ -100,16 +84,11 @@ Metabase also allows you to hit our Query API directly from Javascript to integr
 - Export subsets of your users to third party marketing automation software
 - Provide a specialized customer lookup application for the people in your company
 
-# Danger zone
-
-The button below will deploy the branch where this README.md lives onto Heroku. Metabase developers use it to deploy branches of Metabase to test our PRs, etc. We DO NOT recommend you using this for production. Instead, please use a [stable build](https://metabase.com/start/).
-
-[![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy)
 
 # License
 
-Unless otherwise noted, all Metabase source files are made available under the terms of the GNU Affero General Public License (AGPL).
+This repository contains the source code for both the Open Source edition of Metabase, released under the AGPL, as well as the commercial edition of Metabase Enterprise, released under the Metabase Commercial Software License. 
 
-See [LICENSE.txt](https://github.com/metabase/metabase/blob/master/LICENSE.txt) for details and exceptions.
+See [LICENSE.txt](./LICENSE.txt) for details.
 
-Unless otherwise noted, all files © 2020 Metabase, Inc.
+Unless otherwise noted, all files © 2021 Metabase, Inc.

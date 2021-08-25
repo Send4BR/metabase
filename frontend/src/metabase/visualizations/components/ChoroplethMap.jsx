@@ -1,10 +1,9 @@
-/* eslint-disable no-color-literals */
-
+/* eslint-disable react/prop-types */
 import React, { Component } from "react";
 import { t } from "ttag";
 import LoadingSpinner from "metabase/components/LoadingSpinner";
 
-import { isString } from "metabase/lib/schema_metadata";
+import { isMetric, isString } from "metabase/lib/schema_metadata";
 import { MinColumnsError } from "metabase/visualizations/lib/errors";
 import MetabaseSettings from "metabase/lib/settings";
 
@@ -104,8 +103,8 @@ export default class ChoroplethMap extends Component {
 
   static minSize = { width: 4, height: 4 };
 
-  static isSensible({ cols, rows }) {
-    return cols.length > 1 && isString(cols[0]);
+  static isSensible({ cols }) {
+    return cols.filter(isString).length > 0 && cols.filter(isMetric).length > 0;
   }
 
   static checkRenderable([
@@ -126,8 +125,8 @@ export default class ChoroplethMap extends Component {
     };
   }
 
-  componentWillMount() {
-    this.componentWillReceiveProps(this.props);
+  UNSAFE_componentWillMount() {
+    this.UNSAFE_componentWillReceiveProps(this.props);
   }
 
   _getDetails(props) {
@@ -136,7 +135,7 @@ export default class ChoroplethMap extends Component {
     ];
   }
 
-  componentWillReceiveProps(nextProps) {
+  UNSAFE_componentWillReceiveProps(nextProps) {
     const details = this._getDetails(nextProps);
     if (details) {
       let geoJsonPath;
@@ -222,26 +221,57 @@ export default class ChoroplethMap extends Component {
     const getRowValue = row => row[metricIndex] || 0;
 
     const getFeatureName = feature => String(feature.properties[nameProperty]);
-    const getFeatureKey = feature =>
-      String(feature.properties[keyProperty]).toLowerCase();
+    const getFeatureKey = (feature, { lowerCase = true } = {}) => {
+      const key = String(feature.properties[keyProperty]);
+      return lowerCase ? key.toLowerCase() : key;
+    };
 
     const getFeatureValue = feature => valuesMap[getFeatureKey(feature)];
 
     const rowByFeatureKey = new Map(rows.map(row => [getRowKey(row), row]));
 
-    const getFeatureClickObject = (row, feature) => ({
-      value: row[metricIndex],
-      column: cols[metricIndex],
-      dimensions: [
-        {
-          value:
-            feature != null ? getFeatureName(feature) : row[dimensionIndex],
-          column: cols[dimensionIndex],
-        },
-      ],
-      origin: { row, cols },
-      settings,
-    });
+    const getFeatureClickObject = (row, feature) =>
+      row == null
+        ? // This branch lets you click on empty regions. We use in dashboard cross-filtering.
+          {
+            value: null,
+            column: cols[metricIndex],
+            dimensions: [],
+            data: feature
+              ? [
+                  {
+                    value: getFeatureKey(feature, { lowerCase: false }),
+                    col: cols[dimensionIndex],
+                  },
+                ]
+              : [],
+            origin: { row, cols },
+            settings,
+          }
+        : {
+            value: row[metricIndex],
+            column: cols[metricIndex],
+            dimensions: [
+              {
+                value: row[dimensionIndex],
+                column: cols[dimensionIndex],
+              },
+            ],
+            data: row.map((value, index) => ({
+              value:
+                index === dimensionIndex
+                  ? feature != null
+                    ? getFeatureName(feature)
+                    : row[dimensionIndex]
+                  : value,
+              // We set clickBehaviorValue to the raw data value for use in a filter via crossfiltering.
+              // `value` above is used in the tool tips so it needs to use `getFeatureName`.
+              clickBehaviorValue: value,
+              col: cols[index],
+            })),
+            origin: { row, cols },
+            settings,
+          };
 
     const isClickable =
       onVisualizationClick &&
@@ -250,10 +280,11 @@ export default class ChoroplethMap extends Component {
     const onClickFeature =
       isClickable &&
       (click => {
-        const row = rowByFeatureKey.get(getFeatureKey(click.feature));
-        if (row && onVisualizationClick) {
+        const featureKey = getFeatureKey(click.feature);
+        const row = rowByFeatureKey.get(featureKey);
+        if (onVisualizationClick) {
           onVisualizationClick({
-            ...getFeatureClickObject(row),
+            ...getFeatureClickObject(row, click.feature),
             event: click.event,
           });
         }

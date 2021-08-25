@@ -1,3 +1,4 @@
+/* eslint-disable react/prop-types */
 import React, { Component } from "react";
 import PropTypes from "prop-types";
 
@@ -109,6 +110,7 @@ export default class SaveQuestionModal extends Component {
             { name: "collection_id" },
           ]}
           onSubmit={this.handleSubmit}
+          overwriteOnInitialValuesChange
         >
           {({ values, Form }) => (
             <Form>
@@ -127,6 +129,7 @@ export default class SaveQuestionModal extends Component {
                 {values.saveType === "create" && (
                   <div className="saveQuestionModalFields">
                     <FormField
+                      autoFocus
                       name="name"
                       title={t`Name`}
                       placeholder={t`What is the name of your card?`}

@@ -1,22 +1,50 @@
 (ns metabase.driver.impl
-  "Internal implementation functions for `metabase.driver`. These functions live in a separate namespace to reduce the
-  clutter in `metabase.driver` itself."
+  "Internal implementation functions for [[metabase.driver]]. These functions live in a separate namespace to reduce the
+  clutter in [[metabase.driver]] itself."
   (:require [clojure.tools.logging :as log]
             [metabase.plugins.classloader :as classloader]
             [metabase.util :as u]
             [metabase.util.i18n :refer [trs tru]]
-            [schema.core :as s]))
+            [schema.core :as s])
+  (:import java.util.concurrent.locks.ReentrantReadWriteLock))
 
 ;;; --------------------------------------------------- Hierarchy ----------------------------------------------------
 
-(defonce ^{:doc "Driver hierarchy. Used by driver multimethods for dispatch. Add new drivers with `regsiter!`."}
+(defonce ^{:doc "Driver hierarchy. Used by driver multimethods for dispatch. Add new drivers with `register!`."}
   hierarchy
   (make-hierarchy))
+
+
+(defonce ^{:doc "To find out whether a driver has been registered, we need to wait until any current driver-loading
+  operations have finished. Otherwise we can get a \"false positive\" -- see #13114.
+
+  To see whether a driver is registered, we only need to obtain a *read lock* -- multiple threads can have these at
+  once, and they only block if a write lock is held or if a thread is waiting for one (see dox
+  for [[ReentrantReadWriteLock]] for more details.)
+
+  If we're currently in the process of loading a driver namespace, obtain the *write lock* which will prevent other
+ threads from obtaining read locks until it finishes."} ^:private ^ReentrantReadWriteLock load-driver-lock
+  (ReentrantReadWriteLock.))
+
+(defmacro ^:private with-load-driver-read-lock [& body]
+  `(try
+     (.. load-driver-lock readLock lock)
+     ~@body
+     (finally
+       (.. load-driver-lock readLock unlock))))
+
+(defmacro ^:private with-load-driver-write-lock [& body]
+  `(try
+     (.. load-driver-lock writeLock lock)
+     ~@body
+     (finally
+       (.. load-driver-lock writeLock unlock))))
 
 (defn registered?
   "Is `driver` a valid registered driver?"
   [driver]
-  (isa? hierarchy (keyword driver) :metabase.driver/driver))
+  (with-load-driver-read-lock
+    (isa? hierarchy (keyword driver) :metabase.driver/driver)))
 
 (defn concrete?
   "Is `driver` registered, and non-abstract?"
@@ -60,14 +88,17 @@
   [driver]
   (when-not *compile-files*
     (when-not (registered? driver)
-      (u/profile (trs "Load driver {0}" driver)
-        (require-driver-ns driver)
-        ;; ok, hopefully it was registered now. If not, try again, but reload the entire driver namespace
+      (with-load-driver-write-lock
+        ;; driver may have become registered while we were waiting for the lock, check again to be sure
         (when-not (registered? driver)
-          (require-driver-ns driver :reload)
-          ;; if *still* not registered, throw an Exception
-          (when-not (registered? driver)
-            (throw (Exception. (tru "Driver not registered after loading: {0}" driver)))))))))
+          (u/profile (trs "Load driver {0}" driver)
+            (require-driver-ns driver)
+            ;; ok, hopefully it was registered now. If not, try again, but reload the entire driver namespace
+            (when-not (registered? driver)
+              (require-driver-ns driver :reload)
+              ;; if *still* not registered, throw an Exception
+              (when-not (registered? driver)
+                (throw (Exception. (tru "Driver not registered after loading: {0}" driver)))))))))))
 
 
 ;;; -------------------------------------------------- Registration --------------------------------------------------
@@ -96,7 +127,8 @@
   Parent driver(s) to derive from. Drivers inherit method implementations from their parents similar to the way
   inheritance works in OOP. Specify multiple direct parents by passing a collection of parents.
 
-  You can add additional parents to a driver using `add-parent!` below; this is how test extensions are implemented.
+  You can add additional parents to a driver using [[metabase.driver/add-parent!]]; this is how test extensions are
+  implemented.
 
   ###### `:abstract?` (default = false)
 
@@ -105,7 +137,6 @@
   Note that because concreteness is implemented as part of our keyword hierarchy it is not currently possible to
   create an abstract driver with a concrete driver as its parent, since it would still ultimately derive from
   `::concrete`."
-  {:style/indent 1}
   [driver & {:keys [parent abstract?]}]
   {:pre [(keyword? driver)]}
   ;; no-op during compilation.
@@ -151,7 +182,7 @@
   (atom #{:metabase.driver/driver ::concrete}))
 
 (defn initialized?
-  "Has `driver` been initialized? (See `initialize!` below for a discussion of what exactly this means.)"
+  "Has `driver` been initialized? (See [[metabase.driver/initialize!]] for a discussion of what exactly this means.)"
   [driver]
   (@initialized-drivers driver))
 
@@ -159,7 +190,7 @@
 
 (defn initialize-if-needed!
   "Initialize a driver by calling executing `(init-fn driver)` if it hasn't yet been initialized. Refer to documentation
-  for `metabase.driver/initialize!` for a full explanation of what this means."
+  for [[metabase.driver/initialize!]] for a full explanation of what this means."
   [driver init-fn]
   ;; no-op during compilation
   (when-not *compile-files*

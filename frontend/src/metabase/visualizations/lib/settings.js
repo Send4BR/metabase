@@ -1,4 +1,6 @@
-/* @flow */
+import { getIn } from "icepick";
+
+import * as React from "react";
 
 import ChartSettingInput from "metabase/visualizations/components/settings/ChartSettingInput";
 import ChartSettingInputGroup from "metabase/visualizations/components/settings/ChartSettingInputGroup";
@@ -6,9 +8,10 @@ import ChartSettingInputNumeric from "metabase/visualizations/components/setting
 import ChartSettingRadio from "metabase/visualizations/components/settings/ChartSettingRadio";
 import ChartSettingSelect from "metabase/visualizations/components/settings/ChartSettingSelect";
 import ChartSettingToggle from "metabase/visualizations/components/settings/ChartSettingToggle";
-import ChartSettingButtonGroup from "metabase/visualizations/components/settings/ChartSettingButtonGroup";
+import ChartSettingSegmentedControl from "metabase/visualizations/components/settings/ChartSettingSegmentedControl";
 import ChartSettingFieldPicker from "metabase/visualizations/components/settings/ChartSettingFieldPicker";
 import ChartSettingFieldsPicker from "metabase/visualizations/components/settings/ChartSettingFieldsPicker";
+import ChartSettingFieldsPartition from "metabase/visualizations/components/settings/ChartSettingFieldsPartition";
 import ChartSettingColorPicker from "metabase/visualizations/components/settings/ChartSettingColorPicker";
 import ChartSettingColorsPicker from "metabase/visualizations/components/settings/ChartSettingColorsPicker";
 
@@ -42,10 +45,9 @@ export type SettingDef = {
   getDefault?: (object: any, settings: Settings, extra: ExtraProps) => any,
   getValue?: (object: any, settings: Settings, extra: ExtraProps) => any,
   isValid?: (object: any, settings: Settings, extra: ExtraProps) => boolean,
-  widget?: string | React$Component<any, any, any>,
+  widget?: string | React.Component,
   writeDependencies?: SettingId[],
   readDependencies?: SettingId[],
-  noReset?: boolean,
 };
 
 export type WidgetDef = {
@@ -55,9 +57,7 @@ export type WidgetDef = {
   hidden: boolean,
   disabled: boolean,
   props: { [key: string]: any },
-  noReset?: boolean,
-  // $FlowFixMe
-  widget?: React$Component<any, any, any>,
+  widget?: React.Component,
   onChange: (value: any) => void,
 };
 
@@ -70,9 +70,10 @@ const WIDGETS = {
   radio: ChartSettingRadio,
   select: ChartSettingSelect,
   toggle: ChartSettingToggle,
-  buttonGroup: ChartSettingButtonGroup,
+  segmentedControl: ChartSettingSegmentedControl,
   field: ChartSettingFieldPicker,
   fields: ChartSettingFieldsPicker,
+  fieldsPartition: ChartSettingFieldsPartition,
   color: ChartSettingColorPicker,
   colors: ChartSettingColorsPicker,
 };
@@ -204,6 +205,7 @@ function getSettingWidget(
         ? WIDGETS[settingDef.widget]
         : settingDef.widget,
     onChange,
+    onChangeSettings, // this gives a widget access to update other settings
   };
 }
 
@@ -262,4 +264,58 @@ export function updateSettings(
     }
   }
   return newSettings;
+}
+
+// Merge two settings objects together.
+// Settings from the second argument take precedence over the first.
+export function mergeSettings(first: Settings = {}, second: Settings = {}) {
+  // Note: This hardcoded list of all nested settings is potentially fragile,
+  // but both the list of nested settings and the keys used are very stable.
+  const nestedSettings = ["series_settings", "column_settings"];
+  const merged = { ...first, ...second };
+  for (const key of nestedSettings) {
+    // only set key if one of the objects to be merged has that key set
+    if (first[key] != null || second[key] != null) {
+      merged[key] = {};
+      for (const nestedKey of Object.keys({ ...first[key], ...second[key] })) {
+        merged[key][nestedKey] = mergeSettings(
+          getIn(first, [key, nestedKey]) || {},
+          getIn(second, [key, nestedKey]) || {},
+        );
+      }
+    }
+  }
+  return merged;
+}
+
+export function getClickBehaviorSettings(settings) {
+  const newSettings = {};
+
+  if (settings.click_behavior) {
+    newSettings.click_behavior = settings.click_behavior;
+  }
+
+  const columnSettings = getColumnClickBehavior(settings.column_settings);
+  if (columnSettings) {
+    newSettings.column_settings = columnSettings;
+  }
+
+  return newSettings;
+}
+
+function getColumnClickBehavior(columnSettings) {
+  if (columnSettings == null) {
+    return null;
+  }
+
+  return Object.entries(columnSettings)
+    .filter(([_, fieldSettings]) => fieldSettings.click_behavior != null)
+    .reduce((acc, [key, fieldSettings]) => {
+      return {
+        ...acc,
+        [key]: {
+          click_behavior: fieldSettings.click_behavior,
+        },
+      };
+    }, null);
 }

@@ -2,23 +2,39 @@
   (:require [clojure.string :as str]
             [clojure.tools.logging :as log]
             [java-time :as t]
-            [metabase
-             [config :as config]
-             [types :as types]
-             [util :as u]]
+            [metabase.config :as config]
             [metabase.driver.util :as driver.u]
-            [metabase.models
-             [common :as common]
-             [setting :as setting :refer [defsetting]]]
-            metabase.public-settings.metastore
-            [metabase.util
-             [i18n :as i18n :refer [available-locales-with-names deferred-tru trs tru]]
-             [password :as password]]
+            [metabase.models.setting :as setting :refer [defsetting]]
+            [metabase.plugins.classloader :as classloader]
+            [metabase.public-settings.metastore :as metastore]
+            [metabase.util :as u]
+            [metabase.util.i18n :as i18n :refer [available-locales-with-names deferred-tru trs tru]]
+            [metabase.util.password :as password]
             [toucan.db :as db])
   (:import java.util.UUID))
 
 ;; These modules register settings but are otherwise unused. They still must be imported.
 (comment metabase.public-settings.metastore/keep-me)
+
+(defn- google-auth-configured? []
+  (boolean (setting/get :google-auth-client-id)))
+
+(defn- ldap-configured? []
+  (do (classloader/require 'metabase.integrations.ldap)
+      ((resolve 'metabase.integrations.ldap/ldap-configured?))))
+
+(defn- ee-sso-configured? []
+  (u/ignore-exceptions
+    (classloader/require 'metabase-enterprise.sso.integrations.sso-settings))
+  (when-let [varr (resolve 'metabase-enterprise.sso.integrations.sso-settings/other-sso-configured?)]
+    (varr)))
+
+(defn- sso-configured?
+  "Any SSO provider is configured"
+  []
+  (or (google-auth-configured?)
+      (ldap-configured?)
+      (ee-sso-configured?)))
 
 (defsetting check-for-updates
   (deferred-tru "Identify when new versions of Metabase are available.")
@@ -29,6 +45,12 @@
   (deferred-tru "Information about available versions of Metabase.")
   :type    :json
   :default {})
+
+(defsetting version-info-last-checked
+  (deferred-tru "Indicates when Metabase last checked for new versions.")
+  :visibility :public
+  :type       :timestamp
+  :default    nil)
 
 (defsetting site-name
   (deferred-tru "The name used for this instance of Metabase.")
@@ -55,7 +77,8 @@
             s
             (str "http://" s))]
     ;; check that the URL is valid
-    (assert (u/url? s) (tru "Invalid site URL: {0}" (pr-str s)))
+    (when-not (u/url? s)
+      (throw (ex-info (tru "Invalid site URL: {0}" (pr-str s)) {:url (pr-str s)})))
     s))
 
 (declare redirect-all-requests-to-https)
@@ -63,16 +86,18 @@
 ;; This value is *guaranteed* to never have a trailing slash :D
 ;; It will also prepend `http://` to the URL if there's no protocol when it comes in
 (defsetting site-url
-  (deferred-tru "The base URL of this Metabase instance, e.g. \"http://metabase.my-company.com\".")
+  (str (deferred-tru "This URL is used for things like creating links in emails, auth redirects,")
+       " "
+       (deferred-tru "and in some embedding scenarios, so changing it could break functionality or get you locked out of this instance."))
   :visibility :public
   :getter (fn []
             (try
               (some-> (setting/get-string :site-url) normalize-site-url)
-              (catch AssertionError e
+              (catch clojure.lang.ExceptionInfo e
                 (log/error e (trs "site-url is invalid; returning nil for now. Will be reset on next request.")))))
   :setter (fn [new-value]
             (let [new-value (some-> new-value normalize-site-url)
-                  https?    (some-> new-value (str/starts-with?  "https:" ))]
+                  https?    (some-> new-value (str/starts-with?  "https:"))]
               ;; if the site URL isn't HTTPS then disable force HTTPS redirects if set
               (when-not https?
                 (redirect-all-requests-to-https false))
@@ -110,6 +135,12 @@
   :default    "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
   :visibility :public)
 
+(defsetting landing-page
+  (deferred-tru "Default page to show the user")
+  :visibility :public
+  :type       :string
+  :default    "")
+
 (defsetting enable-public-sharing
   (deferred-tru "Enable admins to create publicly viewable links (and embeddable iframes) for Questions and Dashboards?")
   :type       :boolean
@@ -121,6 +152,10 @@
   :type       :boolean
   :default    false
   :visibility :authenticated)
+
+(defsetting embedding-app-origin
+  (deferred-tru "Allow this origin to embed the full Metabase application")
+  :visibility :public)
 
 (defsetting enable-nested-queries
   (deferred-tru "Allow using a saved question as the source for other queries?")
@@ -177,6 +212,49 @@
   :type    :integer
   :default 10)
 
+(defsetting application-name
+  (deferred-tru "This will replace the word \"Metabase\" wherever it appears.")
+  :visibility :public
+  :type       :string
+  :default    "Metabase")
+
+(defsetting application-colors
+  (deferred-tru "These are the primary colors used in charts and throughout Metabase. You might need to refresh your browser to see your changes take effect.")
+  :visibility :public
+  :type       :json
+  :default    {})
+
+(defn application-color
+  "The primary color, a.k.a. brand color"
+  []
+  (or (:brand (setting/get-json :application-colors)) "#509EE3"))
+
+(defn secondary-chart-color
+  "The first 'Additional chart color'"
+  []
+  (or (:accent3 (setting/get-json :application-colors)) "#EF8C8C"))
+
+(defsetting application-logo-url
+  (deferred-tru "For best results, use an SVG file with a transparent background.")
+  :visibility :public
+  :type       :string
+  :default    "app/assets/img/logo.svg")
+
+(defsetting application-favicon-url
+  (deferred-tru "The url or image that you want to use as the favicon.")
+  :visibility :public
+  :type       :string
+  :default    "/app/assets/img/favicon.ico")
+
+(defsetting enable-password-login
+  (deferred-tru "Allow logging in by email and password.")
+  :visibility :public
+  :type       :boolean
+  :default    true
+  :getter     (fn []
+                (or (setting/get-boolean :enable-password-login)
+                    (not (sso-configured?)))))
+
 (defsetting breakout-bins-num
   (deferred-tru "When using the default binning strategy and a number of bins is not provided, this number will be used as the default.")
   :type :integer
@@ -213,8 +291,9 @@
 
 (defsetting source-address-header
   (deferred-tru "Identify the source of HTTP requests by this header's value, instead of its remote address.")
-  :getter (fn [] (some-> (setting/get-string :source-address-header)
-                         u/lower-case-en)))
+  :default "X-Forwarded-For"
+  :getter  (fn [] (some-> (setting/get-string :source-address-header)
+                          u/lower-case-en)))
 
 (defn remove-public-uuid-if-public-sharing-is-disabled
   "If public sharing is *disabled* and `object` has a `:public_uuid`, remove it so people don't try to use it (since it
@@ -244,25 +323,13 @@
   "Available report timezone options"
   :visibility :public
   :setter     :none
-  :getter     (constantly common/timezones))
+  :getter     (comp sort t/available-zone-ids))
 
 (defsetting engines
   "Available database engines"
   :visibility :public
   :setter     :none
   :getter     driver.u/available-drivers-info)
-
-(defsetting types
-  "Field types"
-  :visibility :public
-  :setter     :none
-  :getter     (fn [] (types/types->parents :type/*)))
-
-(defsetting entities
-  "Entity types"
-  :visibility :public
-  :setter     :none
-  :getter     (fn [] (types/types->parents :entity/*)))
 
 (defsetting has-sample-dataset?
   "Whether this instance has a Sample Dataset database"
@@ -274,7 +341,13 @@
   "Current password complexity requirements"
   :visibility :public
   :setter     :none
-  :getter     (constantly password/active-password-complexity))
+  :getter     password/active-password-complexity)
+
+(defsetting session-cookies
+  (deferred-tru "When set, enforces the use of session cookies for all users which expire when the browser is closed.")
+  :type       :boolean
+  :visibility :public
+  :default    nil)
 
 (defsetting report-timezone-short
   "Current report timezone abbreviation"
@@ -287,6 +360,16 @@
   :visibility :public
   :setter     :none
   :getter     (constantly config/mb-version-info))
+
+(defsetting premium-features
+  "Premium EE features enabled for this instance."
+  :visibility :public
+  :setter     :none
+  :getter     (fn [] {:embedding  (metastore/hide-embed-branding?)
+                      :whitelabel (metastore/enable-whitelabeling?)
+                      :audit_app  (metastore/enable-audit-app?)
+                      :sandboxes  (metastore/enable-sandboxes?)
+                      :sso        (metastore/enable-sso?)}))
 
 (defsetting redirect-all-requests-to-https
   (deferred-tru "Force all traffic to use HTTPS via a redirect, if the site URL is HTTPS")
@@ -301,3 +384,22 @@
                   (assert (some-> (site-url) (str/starts-with? "https:"))
                           (tru "Cannot redirect requests to HTTPS unless `site-url` is HTTPS.")))
                 (setting/set-boolean! :redirect-all-requests-to-https new-value)))
+
+(defsetting start-of-week
+  (deferred-tru "This will affect things like grouping by week or filtering in GUI queries.
+  It won''t affect SQL queries.")
+  :visibility :public
+  :type       :keyword
+  :default    "sunday")
+
+(defsetting ssh-heartbeat-interval-sec
+  (deferred-tru "Controls how often the heartbeats are sent when an SSH tunnel is established (in seconds).")
+  :visibility :public
+  :type       :integer
+  :default    180)
+
+(defsetting redshift-fetch-size
+  (deferred-tru "Controls the fetch size used for Redshift queries (in PreparedStatement), via defaultRowFetchSize.")
+  :visibility :public
+  :type       :integer
+  :default    5000)

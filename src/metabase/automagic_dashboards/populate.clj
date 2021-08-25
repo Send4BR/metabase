@@ -5,9 +5,8 @@
             [medley.core :as m]
             [metabase.api.common :as api]
             [metabase.automagic-dashboards.filters :as filters]
-            [metabase.models
-             [card :as card]
-             [collection :as collection]]
+            [metabase.models.card :as card]
+            [metabase.models.collection :as collection]
             [metabase.query-processor.util :as qp.util]
             [metabase.util.i18n :refer [trs]]
             [toucan.db :as db]))
@@ -194,13 +193,13 @@
   "Find the bottom of the grid. Bottom is the first completely empty row with
    another empty row below it."
   [grid]
-  (let [row {:height 0 :width grid-width}]
-    (loop [bottom 0]
+  (let [row {:height 0, :width grid-width}]
+    (loop [bottom (long 0)]
       (let [[bottom _]      (card-position grid bottom row)
             [next-bottom _] (card-position grid (inc bottom) row)]
         (if (= (inc bottom) next-bottom)
           bottom
-          (recur next-bottom))))))
+          (recur (long next-bottom)))))))
 
 (def ^:private ^{:arglists '([card])} text-card?
   :text)

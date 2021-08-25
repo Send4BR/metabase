@@ -1,23 +1,34 @@
+/* eslint-disable react/prop-types */
 import React from "react";
-import LegendHeader from "./LegendHeader";
+import PropTypes from "prop-types";
 import _ from "underscore";
+import { getIn } from "icepick";
 
-export const TitleLegendHeader = ({
+import { iconPropTypes } from "metabase/components/Icon";
+
+import LegendHeader from "./LegendHeader";
+
+const propTypes = {
+  icon: PropTypes.shape(iconPropTypes),
+};
+
+export default function TitleLegendHeader({
   series,
   settings,
   onChangeCardAndRun,
   actionButtons,
-}) => {
-  // $FlowFixMe
+  icon,
+}) {
   const originalSeries = series._raw || series;
   const cardIds = _.uniq(originalSeries.map(s => s.card.id));
   const isComposedOfMultipleQuestions = cardIds.length > 1;
+  const name = settings["card.title"] || getIn(series, [0, "card", "name"]);
 
-  if (settings["card.title"]) {
+  if (name) {
     const titleHeaderSeries = [
       {
         card: {
-          name: settings["card.title"],
+          name,
           ...(isComposedOfMultipleQuestions
             ? {}
             : {
@@ -35,6 +46,7 @@ export const TitleLegendHeader = ({
         series={titleHeaderSeries}
         description={settings["card.description"]}
         actionButtons={actionButtons}
+        icon={icon}
         // If a dashboard card is composed of multiple questions, its custom card title
         // shouldn't act as a link as it's ambiguous that which question it should open
         onChangeCardAndRun={
@@ -46,4 +58,6 @@ export const TitleLegendHeader = ({
     // If the title isn't provided in settings, render nothing
     return null;
   }
-};
+}
+
+TitleLegendHeader.propTypes = propTypes;

@@ -1,16 +1,14 @@
 (ns metabase.pulse.render
   (:require [clojure.tools.logging :as log]
             [hiccup.core :refer [h]]
-            [metabase.pulse.render
-             [body :as body]
-             [common :as common]
-             [image-bundle :as image-bundle]
-             [png :as png]
-             [style :as style]]
+            [metabase.pulse.render.body :as body]
+            [metabase.pulse.render.common :as common]
+            [metabase.pulse.render.image-bundle :as image-bundle]
+            [metabase.pulse.render.png :as png]
+            [metabase.pulse.render.style :as style]
             [metabase.types :as types]
-            [metabase.util
-             [i18n :refer [trs tru]]
-             [urls :as urls]]
+            [metabase.util.i18n :refer [trs tru]]
+            [metabase.util.urls :as urls]
             [schema.core :as s]))
 
 (def ^:private ^:const card-width 400)
@@ -46,12 +44,12 @@
                                  :src   (:image-src image-bundle)}])]]]]})))
 
 (defn- number-field?
-  [{base-type :base_type, special-type :special_type}]
-  (some #(isa? % :type/Number) [base-type special-type]))
+  [{base-type :base_type, semantic-type :semantic_type}]
+  (some #(isa? % :type/Number) [base-type semantic-type]))
 
 (defn detect-pulse-chart-type
   "Determine the pulse (visualization) type of a `card`, e.g. `:scalar` or `:bar`."
-  [{display-type :display, card-name :name, :as card} {:keys [cols rows], :as data}]
+  [{display-type :display, card-name :name, :as card} {:keys [cols rows insights], :as data}]
   (let [col-sample-count          (delay (count (take 3 cols)))
         row-sample-count          (delay (count (take 2 rows)))
         [col-1-rowfn col-2-rowfn] (common/graphing-column-row-fns card data)
@@ -74,6 +72,11 @@
 
         (= @col-sample-count @row-sample-count 1)
         (chart-type :scalar "result has one row and one column")
+
+        (and (= display-type :smartscalar)
+             (= @col-sample-count 2)
+             (seq insights))
+        (chart-type :smartscalar "result has two columns and insights")
 
         (and (= @col-sample-count 2)
              (> @row-sample-count 1)
@@ -111,22 +114,30 @@
   [card]
   (h (urls/card-url (:id card))))
 
-(s/defn ^:private render-pulse-card :- common/RenderedPulseCard
-  "Render a single `card` for a `Pulse` to Hiccup HTML. `result` is the QP results."
+(s/defn render-pulse-card :- common/RenderedPulseCard
+  "Render a single `card` for a `Pulse` to Hiccup HTML. `result` is the QP results. Returns a map with keys
+
+- attachments
+- content (a hiccup form suitable for rending on rich clients or rendering into an image)
+- render/text : raw text suitable for substituting on clients when text is preferable. (Currently slack uses this for
+  scalar results where text is preferable to an image of a div of a single result."
   [render-type timezone-id :- (s/maybe s/Str) card results]
-  (let [{title :content, title-attachments :attachments}     (make-title-if-needed render-type card)
-        {pulse-body :content, body-attachments :attachments} (render-pulse-card-body render-type timezone-id card results)]
-    {:attachments (merge title-attachments body-attachments)
-     :content     [:a {:href   (card-href card)
-                       :target "_blank"
-                       :style  (style/style
-                                (style/section-style)
-                                {:margin          :16px
-                                 :margin-bottom   :16px
-                                 :display         :block
-                                 :text-decoration :none})}
-                   title
-                   pulse-body]}))
+  (let [{title :content, title-attachments :attachments} (make-title-if-needed render-type card)
+        {pulse-body       :content
+         body-attachments :attachments
+         text             :render/text}                  (render-pulse-card-body render-type timezone-id card results)]
+    (cond-> {:attachments (merge title-attachments body-attachments)
+             :content     [:a {:href   (card-href card)
+                               :target "_blank"
+                               :style  (style/style
+                                        (style/section-style)
+                                        {:margin          :16px
+                                         :margin-bottom   :16px
+                                         :display         :block
+                                         :text-decoration :none})}
+                           title
+                           pulse-body]}
+      text (assoc :render/text text))))
 
 (defn render-pulse-card-for-display
   "Same as `render-pulse-card` but isn't intended for an email, rather for previewing so there is no need for
@@ -157,3 +168,8 @@
   "Render a `pulse-card` as a PNG. `data` is the `:data` from a QP result (I think...)"
   [timezone-id :- (s/maybe s/Str) pulse-card result]
   (png/render-html-to-png (render-pulse-card :inline timezone-id pulse-card result) card-width))
+
+(s/defn png-from-render-info :- bytes
+  "Create a PNG file (as a byte array) from rendering info."
+  [rendered-info :- common/RenderedPulseCard]
+  (png/render-html-to-png rendered-info card-width))

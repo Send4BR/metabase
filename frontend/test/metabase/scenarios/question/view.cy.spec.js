@@ -1,41 +1,13 @@
-import {
-  signInAsAdmin,
-  restore,
-  openOrdersTable,
-  popover,
-  signIn,
-  withSampleDataset,
-} from "__support__/cypress";
+import { restore, openOrdersTable, popover } from "__support__/e2e/cypress";
+import { SAMPLE_DATASET } from "__support__/e2e/cypress_sample_dataset";
 
-function filterByVendor() {
-  cy.findAllByText("VENDOR")
-    .first()
-    .click();
-  popover().within(() => {
-    cy.findByPlaceholderText("Search by Vendor").type("b");
-    cy.findByText("Balistreri-Muller").click();
-    cy.findByText("Add filter").click();
-  });
-  cy.get(".RunButton")
-    .first()
-    .click();
-}
-function filterByCategory() {
-  cy.findAllByText("CATEGORY")
-    .first()
-    .click();
-  popover().within(() => {
-    cy.findByText("Widget").click();
-    cy.findByText("Add filter").click();
-  });
-  cy.get(".RunButton")
-    .last()
-    .click();
-}
+const { PRODUCTS } = SAMPLE_DATASET;
 
 describe("scenarios > question > view", () => {
-  before(restore);
-  beforeEach(signInAsAdmin);
+  beforeEach(() => {
+    restore();
+    cy.signInAsAdmin();
+  });
 
   describe("summarize sidebar", () => {
     it("should summarize by category and show a bar chart", () => {
@@ -106,7 +78,7 @@ describe("scenarios > question > view", () => {
       openOrdersTable();
       cy.contains("Filter").click();
       cy.contains("Vendor").click();
-      cy.get("input[placeholder='Search by Vendor']")
+      cy.findByPlaceholderText("Search by Vendor")
         .clear()
         .type("Alfreda Konopelski II Group")
         .blur();
@@ -116,11 +88,10 @@ describe("scenarios > question > view", () => {
   });
 
   describe("apply filters without data permissions", () => {
-    before(() => {
+    beforeEach(() => {
       // All users upgraded to collection view access
-      signInAsAdmin();
       cy.visit("/admin/permissions/collections");
-      cy.get(".Icon-close")
+      cy.icon("close")
         .first()
         .click();
       cy.findByText("View collection").click();
@@ -128,44 +99,36 @@ describe("scenarios > question > view", () => {
       cy.findByText("Yes").click();
 
       // Native query saved in dasbhoard
-      cy.request("POST", "/api/dashboard", {
-        name: "Dashboard",
-      });
-      withSampleDataset(({ PRODUCTS }) => {
-        cy.request("POST", "/api/card", {
-          name: "Question",
-          dataset_query: {
-            type: "native",
-            native: {
-              query: "select * from products where {{category}} and {{vendor}}",
-              "template-tags": {
-                category: {
-                  id: "6b8b10ef-0104-1047-1e5v-2492d5954555",
-                  name: "category",
-                  "display-name": "CATEGORY",
-                  type: "dimension",
-                  dimension: ["field-id", PRODUCTS.CATEGORY],
-                  "widget-type": "id",
-                },
-                vendor: {
-                  id: "6b8b10ef-0104-1047-1e5v-2492d5964545",
-                  name: "vendor",
-                  "display-name": "VENDOR",
-                  type: "dimension",
-                  dimension: ["field-id", PRODUCTS.VENDOR],
-                  "widget-type": "id",
-                },
-              },
+      cy.createDashboard("Dashboard");
+
+      cy.createNativeQuestion({
+        name: "Question",
+        native: {
+          query: "select * from products where {{category}} and {{vendor}}",
+          "template-tags": {
+            category: {
+              id: "6b8b10ef-0104-1047-1e5v-2492d5954555",
+              name: "category",
+              "display-name": "CATEGORY",
+              type: "dimension",
+              dimension: ["field", PRODUCTS.CATEGORY, null],
+              "widget-type": "id",
             },
-            database: 1,
+            vendor: {
+              id: "6b8b10ef-0104-1047-1e5v-2492d5964545",
+              name: "vendor",
+              "display-name": "VENDOR",
+              type: "dimension",
+              dimension: ["field", PRODUCTS.VENDOR, null],
+              "widget-type": "id",
+            },
           },
-          display: "table",
-          visualization_settings: {},
-        });
-        cy.request("POST", "/api/dashboard/2/cards", {
-          id: 2,
-          cardId: 4,
-        });
+        },
+      });
+
+      cy.request("POST", "/api/dashboard/2/cards", {
+        id: 2,
+        cardId: 4,
       });
     });
 
@@ -195,29 +158,61 @@ describe("scenarios > question > view", () => {
       });
     });
 
-    it.skip("should be able to filter Q by Category as no data user (from Q link)", () => {
-      // *** Test will fail until Issue #12654 is resolved
-      signIn("nodata");
+    it("should be able to filter Q by Category as no data user (from Q link) (metabase#12654)", () => {
+      cy.signIn("nodata");
       cy.visit("/question/4");
 
       // Filter by category and vendor
-      filterByCategory();
-      filterByVendor();
+      // TODO: this should show values and allow searching
+      cy.findByText("This question is written in SQL.");
+      cy.findByPlaceholderText("VENDOR")
+        .click()
+        .clear()
+        .type("Balistreri-Muller");
+      cy.findByPlaceholderText("CATEGORY")
+        .click()
+        .clear()
+        .type("Widget");
+      cy.get(".RunButton")
+        .last()
+        .click();
 
       cy.findAllByText("Widget");
-      cy.findByText("Gizmo").should("not.exist");
+      cy.findAllByText("Gizmo").should("not.exist");
     });
 
-    it.skip("should be able to filter Q by Vendor as user (from Dashboard)", () => {
-      // *** Test will fail until Issue #12654 is resolved
+    it("should be able to filter Q by Vendor as user (from Dashboard) (metabase#12654)", () => {
       // Navigate to Q from Dashboard
-      signIn("nodata");
+      cy.signIn("nodata");
       cy.visit("/dashboard/2");
       cy.findByText("Question").click();
 
       // Filter by category and vendor
-      filterByCategory();
-      filterByVendor();
+      // TODO: this should show values and allow searching
+      cy.findByText("This question is written in SQL.");
+      cy.findAllByText("VENDOR")
+        .first()
+        .click();
+      popover().within(() => {
+        cy.findByPlaceholderText("Search by Vendor").type("Balistreri-Muller");
+        cy.findByText("Add filter").click();
+      });
+      cy.get(".RunButton")
+        .first()
+        .click();
+      cy.findAllByText("CATEGORY")
+        .first()
+        .click();
+      popover().within(() => {
+        cy.findByPlaceholderText("Enter some text")
+          .click()
+          .clear()
+          .type("Widget");
+        cy.findByText("Add filter").click();
+      });
+      cy.get(".RunButton")
+        .last()
+        .click();
 
       cy.get(".TableInteractive-cellWrapper--firstColumn").should(
         "have.length",

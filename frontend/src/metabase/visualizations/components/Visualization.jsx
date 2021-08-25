@@ -1,9 +1,7 @@
-/* @flow weak */
-
 import React from "react";
 
 import ExplicitSize from "metabase/components/ExplicitSize";
-import LegendHeader from "metabase/visualizations/components/LegendHeader";
+import TitleLegendHeader from "metabase/visualizations/components/TitleLegendHeader";
 import ChartTooltip from "metabase/visualizations/components/ChartTooltip";
 import ChartClickActions from "metabase/visualizations/components/ChartClickActions";
 import LoadingSpinner from "metabase/components/LoadingSpinner";
@@ -31,7 +29,7 @@ import {
 
 import NoResults from "assets/img/no_results.svg";
 
-import { assoc, setIn } from "icepick";
+import { assoc } from "icepick";
 import _ from "underscore";
 import cx from "classnames";
 
@@ -39,6 +37,7 @@ export const ERROR_MESSAGE_GENERIC = t`There was a problem displaying this chart
 export const ERROR_MESSAGE_PERMISSION = t`Sorry, you don't have permission to see this card.`;
 
 import Question from "metabase-lib/lib/Question";
+import Query from "metabase-lib/lib/queries/Query";
 import Mode from "metabase-lib/lib/Mode";
 import type {
   Card as CardObject,
@@ -65,6 +64,12 @@ type Props = {
   isEditing: boolean,
   isSettings: boolean,
 
+  headerIcon?: {
+    name: string,
+    color?: string,
+    size?: Number,
+  },
+
   actionButtons: React.Element<any>,
 
   // errors
@@ -88,6 +93,9 @@ type Props = {
   onChangeCardAndRun: OnChangeCardAndRun,
   onChangeLocation: (url: string) => void,
 
+  // for checking renderability
+  query: Query,
+
   mode?: Mode,
 
   // used for showing content in place of visualization, e.x. dashcard filter mapping
@@ -104,12 +112,14 @@ type Props = {
   gridUnit?: number,
 
   classNameWidgets?: string,
+
+  getExtraDataForClick?: Function,
 };
 
 type State = {
   series: ?Series,
   visualization: ?(React.Component<void, VisualizationSettings, void> & {
-    checkRenderable: (any, any) => void,
+    checkRenderable: (any, any, any) => void,
     noHeader: boolean,
   }),
   computedSettings: VisualizationSettings,
@@ -157,11 +167,11 @@ export default class Visualization extends React.PureComponent {
     },
   };
 
-  componentWillMount() {
+  UNSAFE_componentWillMount() {
     this.transform(this.props);
   }
 
-  componentWillReceiveProps(newProps) {
+  UNSAFE_componentWillReceiveProps(newProps) {
     if (
       !isSameSeries(newProps.rawSeries, this.props.rawSeries) ||
       !Utils.equals(newProps.settings, this.props.settings)
@@ -193,7 +203,6 @@ export default class Visualization extends React.PureComponent {
   // shouldComponentUpdate(nextProps, nextState) {
   // }
 
-  // $FlowFixMe
   getWarnings(props = this.props, state = this.state) {
     let warnings = state.warnings || [];
     // don't warn about truncated data for table since we show a warning in the row count
@@ -273,15 +282,21 @@ export default class Visualization extends React.PureComponent {
     if (!clicked) {
       return [];
     }
-    const { rawSeries, metadata } = this.props;
+    const { metadata, getExtraDataForClick = () => ({}) } = this.props;
     // TODO: push this logic into Question?
     const seriesIndex = clicked.seriesIndex || 0;
-    const card = rawSeries[seriesIndex].card;
+    const card = this.state.series[seriesIndex].card;
     const question = this._getQuestionForCardCached(metadata, card);
     const mode = this.props.mode
       ? question && new Mode(question, this.props.mode)
       : question && question.mode();
-    return mode ? mode.actionsForClick(clicked, {}) : [];
+
+    return mode
+      ? mode.actionsForClick(
+          { ...clicked, extraData: getExtraDataForClick(clicked) },
+          {},
+        )
+      : [];
   }
 
   visualizationIsClickable = (clicked: ClickObject) => {
@@ -363,6 +378,7 @@ export default class Visualization extends React.PureComponent {
       isDashboard,
       width,
       height,
+      headerIcon,
       errorIcon,
       isSlow,
       expectedDuration,
@@ -404,7 +420,7 @@ export default class Visualization extends React.PureComponent {
       } else {
         try {
           if (visualization.checkRenderable) {
-            visualization.checkRenderable(series, settings);
+            visualization.checkRenderable(series, settings, this.props.query);
           }
         } catch (e) {
           error = e.message || t`Could not display this chart with this data.`;
@@ -441,7 +457,6 @@ export default class Visualization extends React.PureComponent {
 
     if (!error) {
       noResults = _.every(
-        // $FlowFixMe
         series,
         s => s && s.data && datasetContainsNoResults(s.data),
       );
@@ -489,37 +504,38 @@ export default class Visualization extends React.PureComponent {
 
     const CardVisualization = visualization;
 
+    const title = settings["card.title"];
+    const hasHeaderContent = title || extra;
+    const isHeaderEnabled = !(visualization && visualization.noHeader);
+
+    const hasLegendHeader =
+      (showTitle &&
+        hasHeaderContent &&
+        (loading || error || noResults || isHeaderEnabled)) ||
+      replacementContent;
+
     return (
-      <div className={cx(className, "flex flex-column")} style={style}>
-        {(showTitle &&
-          (settings["card.title"] || extra) &&
-          (loading ||
-            error ||
-            noResults ||
-            !(visualization && visualization.noHeader))) ||
-        replacementContent ? (
+      <div
+        className={cx(className, "flex flex-column full-height")}
+        style={style}
+      >
+        {!!hasLegendHeader && (
           <div className="p1 flex-no-shrink">
-            <LegendHeader
+            <TitleLegendHeader
               classNameWidgets={classNameWidgets}
-              series={
-                settings["card.title"]
-                  ? // if we have a card title set, use it
-                    // $FlowFixMe
-                    setIn(series, [0, "card", "name"], settings["card.title"])
-                  : // otherwise use the original series
-                    series
-              }
+              series={series}
               actionButtons={extra}
               description={settings["card.description"]}
               settings={settings}
+              icon={headerIcon}
               onChangeCardAndRun={
-                this.props.onChangeCardAndRun
+                this.props.onChangeCardAndRun && !replacementContent
                   ? this.handleOnChangeCardAndRun
                   : null
               }
             />
           </div>
-        ) : null}
+        )}
         {replacementContent ? (
           replacementContent
         ) : // on dashboards we should show the "No results!" warning if there are no rows or there's a MinRowsError and actualRows === 0
@@ -573,18 +589,16 @@ export default class Visualization extends React.PureComponent {
             )}
           </div>
         ) : (
-          // $FlowFixMe
           <CardVisualization
             {...this.props}
             // NOTE: CardVisualization class used to target ExplicitSize HOC
             className="CardVisualization flex-full flex-basis-none"
             series={series}
             settings={settings}
-            // $FlowFixMe
             card={series[0].card} // convenience for single-series visualizations
-            // $FlowFixMe
             data={series[0].data} // convenience for single-series visualizations
             hovered={hovered}
+            headerIcon={hasLegendHeader ? null : headerIcon}
             onHoverChange={this.handleHoverChange}
             onVisualizationClick={this.handleVisualizationClick}
             visualizationIsClickable={this.visualizationIsClickable}
